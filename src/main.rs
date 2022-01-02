@@ -33,11 +33,11 @@ mod hardware {
     }
 
     #[derive(Default)]
-    struct AddressRegister {
-        val: u16, //Only use least significant 12 bits.
+    pub struct ProgramCounter {
+        pub val: u16,
     }
 
-    impl Deref for AddressRegister {
+    impl Deref for ProgramCounter {
         type Target = u16;
 
         fn deref(&self) -> &Self::Target {
@@ -45,9 +45,9 @@ mod hardware {
         }
     }
 
-    impl AddressRegister {
-        fn set(&mut self, input: u16) {
-            self.val = input; // & 0b_0000_1111_1111_1111; // Some specs say this should only be 12 bytes. Might be safer to truncate to 12 bits
+    impl ProgramCounter {
+        pub fn set(&mut self, input: u16) {
+            self.val = input; // & 0b_0000_1111_1111_1111; // Some specs say this should only be 12 bits. Might be safer to truncate to 12 bits
         }
     }
 
@@ -56,21 +56,61 @@ mod hardware {
     }
 
     #[derive(Default)]
-    struct Stack {
+    pub struct Stack {
         stack: [u16; 16],
         sp: usize,
     }
 
     impl Stack {
-        fn push(&mut self, pc: u16) {
-            self.stack[self.sp] = pc;
+        pub fn push(&mut self, pc: u16) {
             self.sp += 1;
+            self.stack[self.sp] = pc;
         }
 
-        fn pop(&mut self) -> u16 {
+        pub fn pop(&mut self) -> u16 {
+            let returner = self.stack[self.sp];
             self.sp -= 1;
-            self.stack[self.sp]
+            returner
         }
+    }
+}
+
+mod opcode {
+
+    // Jump to a routine
+    fn sys() -> u16 {
+        //TODO
+        return 0;
+    }
+
+    // Clear the display
+    fn cls() { //TODO
+    }
+
+    //Return from subroutine (pops the address from the top of the stack)
+    fn ret(
+        stack: &mut crate::hardware::Stack,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) {
+        program_counter.set(stack.pop());
+    }
+
+    // Jump to location
+    fn jp(input: u16, program_counter: &mut crate::hardware::ProgramCounter) {
+        assert!(input <= 0xFFF); // value not exceeding 12 bits
+        program_counter.set(input);
+    }
+
+    // Call subroutine. Push PC to stack then jump to the given value
+    fn call(
+        input: u16,
+        program_counter: &mut crate::hardware::ProgramCounter,
+        stack: &mut crate::hardware::Stack,
+    ) {
+        assert!(input <= 0xFFF); // Not exceeding 12 bits
+
+        stack.push(program_counter.val);
+        program_counter.set(input);
     }
 }
 
