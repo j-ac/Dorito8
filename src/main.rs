@@ -3,7 +3,10 @@ use std::io::Seek;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
+const TWELVE_BITS: u16 = 0xFFF;
+
 #[derive(StructOpt, Debug)]
+
 struct Opt {
     /// Runs with debug info displayed
     #[structopt(short, long)]
@@ -28,8 +31,8 @@ mod hardware {
     use std::ops::Deref;
 
     #[derive(Default)]
-    struct Register {
-        val: u8,
+    pub struct Register {
+        pub val: u8,
     }
 
     #[derive(Default)]
@@ -51,8 +54,8 @@ mod hardware {
         }
     }
 
-    struct Memory {
-        memory: [u8; 4096],
+    pub struct Memory {
+        pub memory: [u8; 4096],
     }
 
     #[derive(Default)]
@@ -77,6 +80,8 @@ mod hardware {
 
 mod opcode {
 
+    use crate::TWELVE_BITS;
+
     // Jump to a routine
     fn sys() -> u16 {
         //TODO
@@ -84,7 +89,7 @@ mod opcode {
     }
 
     // Clear the display
-    fn cls() { //TODO
+    fn cls(memory: &mut crate::hardware::Memory) { //TODO
     }
 
     //Return from subroutine (pops the address from the top of the stack)
@@ -97,7 +102,7 @@ mod opcode {
 
     // Jump to location
     fn jp(input: u16, program_counter: &mut crate::hardware::ProgramCounter) {
-        assert!(input <= 0xFFF); // value not exceeding 12 bits
+        assert!(input <= TWELVE_BITS); // value not exceeding 0xFFF
         program_counter.set(input);
     }
 
@@ -107,10 +112,56 @@ mod opcode {
         program_counter: &mut crate::hardware::ProgramCounter,
         stack: &mut crate::hardware::Stack,
     ) {
-        assert!(input <= 0xFFF); // Not exceeding 12 bits
-
+        assert!(input <= TWELVE_BITS);
         stack.push(program_counter.val);
         program_counter.set(input);
+    }
+
+    // Skip if equal
+    fn se_const_vs_reg(
+        input: u8,
+        register: crate::hardware::Register,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) {
+        if input == register.val {
+            program_counter.val += 2; //Skip one instruction
+        }
+    }
+
+    //skip if not equal
+    fn sne_const_vs_reg(
+        input: u8,
+        register: crate::hardware::Register,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) {
+        if input != register.val {
+            program_counter.val += 2;
+        } //Skip one instruction
+    }
+
+    fn se_reg_vs_reg(
+        reg1: crate::hardware::Register,
+        reg2: crate::hardware::Register,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) {
+        if reg1.val == reg2.val {
+            program_counter.val += 2;
+        }
+    }
+
+    fn sne_reg_vs_reg(
+        reg1: crate::hardware::Register,
+        reg2: crate::hardware::Register,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) {
+        if reg1.val != reg2.val {
+            program_counter.val += 2;
+        }
+    }
+
+    // Load? seems like a bad naming convention...
+    fn ld(register: &mut crate::hardware::Register, input: u8) {
+        register.val = input;
     }
 }
 
