@@ -35,7 +35,6 @@ mod hardware {
         pub val: u8,
     }
 
-    #[derive(Default)]
     pub struct ProgramCounter {
         pub val: u16,
     }
@@ -126,42 +125,75 @@ mod opcode {
         if input == register.val {
             program_counter.val += 2; //Skip one instruction
         }
-    }
 
-    //skip if not equal
-    fn sne_const_vs_reg(
-        input: u8,
-        register: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
-        if input != register.val {
-            program_counter.val += 2;
-        } //Skip one instruction
-    }
-
-    fn se_reg_vs_reg(
-        reg1: crate::hardware::Register,
-        reg2: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
-        if reg1.val == reg2.val {
-            program_counter.val += 2;
+        //skip if not equal
+        fn sne_const_vs_reg(
+            input: u8,
+            register: crate::hardware::Register,
+            program_counter: &mut crate::hardware::ProgramCounter,
+        ) {
+            if input != register.val {
+                program_counter.val += 2;
+            } //Skip one instruction
         }
-    }
 
-    fn sne_reg_vs_reg(
-        reg1: crate::hardware::Register,
-        reg2: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
-        if reg1.val != reg2.val {
-            program_counter.val += 2;
+        fn se_reg_vs_reg(
+            reg1: crate::hardware::Register,
+            reg2: crate::hardware::Register,
+            program_counter: &mut crate::hardware::ProgramCounter,
+        ) {
+            if reg1.val == reg2.val {
+                program_counter.val += 2;
+            }
         }
-    }
 
-    // Load? seems like a bad naming convention...
-    fn ld(register: &mut crate::hardware::Register, input: u8) {
-        register.val = input;
+        fn sne_reg_vs_reg(
+            reg1: crate::hardware::Register,
+            reg2: crate::hardware::Register,
+            program_counter: &mut crate::hardware::ProgramCounter,
+        ) {
+            if reg1.val != reg2.val {
+                program_counter.val += 2;
+            }
+        }
+
+        // Load? seems like a bad naming convention...
+        fn ld(register: &mut crate::hardware::Register, input: u8) {
+            register.val = input
+        }
+
+        // add constant to register
+        fn add(input: u8, reg: &mut crate::hardware::Register) {
+            reg.val = ((reg.val as u16) + (input as u16)) as u8 //truncates to the least significant 8 bits.
+        }
+
+        // bitwise or on two registers
+        fn or(reg1: &mut crate::hardware::Register, reg2: crate::hardware::Register) {
+            reg1.val = reg1.val | reg2.val;
+        }
+
+        // bitwise and on two registers
+        fn and(reg1: &mut crate::hardware::Register, reg2: crate::hardware::Register) {
+            reg1.val = reg1.val & reg2.val;
+        }
+
+        // bitwise xor on two registers
+        fn xor(reg1: &mut crate::hardware::Register, reg2: crate::hardware::Register) {
+            reg1.val = reg1.val ^ reg2.val;
+        }
+
+        fn add_two_regs(
+            reg1: &mut crate::hardware::Register,
+            reg2: crate::hardware::Register,
+            overflow_flag: &mut crate::hardware::Register,
+        ) {
+            //Differs from add() by the args and uses overflow detection
+            if (reg1.val as u16 + reg2.val as u16) > TWELVE_BITS {
+                overflow_flag.val = 1;
+            }
+
+            reg1.val = (reg1.val as u16 + reg2.val as u16) as u8
+        }
     }
 }
 
