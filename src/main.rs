@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 const TWELVE_BITS: u16 = 0xFFF;
-
+const EIGHT_BITS: u16 = 0xFF;
 #[derive(StructOpt, Debug)]
 
 struct Opt {
@@ -33,6 +33,10 @@ mod hardware {
     #[derive(Default)]
     pub struct Register {
         pub val: u8,
+    }
+
+    pub struct IRegister {
+        pub val: u16,
     }
 
     pub struct ProgramCounter {
@@ -79,6 +83,7 @@ mod hardware {
 
 mod opcode {
 
+    use crate::EIGHT_BITS;
     use crate::TWELVE_BITS;
 
     // Jump to a routine
@@ -188,7 +193,7 @@ mod opcode {
         overflow_flag: &mut crate::hardware::Register,
     ) {
         //Differs from add() by the args and uses overflow detection
-        if (reg1.val as u16 + reg2.val as u16) > TWELVE_BITS {
+        if (reg1.val as u16 + reg2.val as u16) > EIGHT_BITS {
             overflow_flag.val = 1;
         }
 
@@ -219,6 +224,47 @@ mod opcode {
             fraction_truncated_flag.val = 1;
         }
         reg.val = reg.val / 2;
+    }
+
+    // Reversed operands order compared to sub()
+    fn subn(
+        reg1: &mut crate::hardware::Register,
+        reg2: &mut crate::hardware::Register,
+        overflow_flag: &mut crate::hardware::Register,
+    ) {
+        if reg2.val > reg1.val {
+            overflow_flag.val = 1;
+        } else {
+            overflow_flag.val = 0;
+        }
+
+        reg1.val = reg2.val - reg1.val;
+    }
+
+    // shift left.
+    // Might result in bits "falling off" the edge
+    fn shl(reg: &mut crate::hardware::Register, overflow_flag: &mut crate::hardware::Register) {
+        if reg.val >= 0b_1000_0000 {
+            //ie if the most significant bit is 1
+            overflow_flag.val = 1;
+        }
+        reg.val *= 2;
+    }
+
+    // Load a constant into the IRegister
+    fn ld_into_i(IReg: &mut crate::hardware::IRegister, input: u16) {
+        assert!(input <= TWELVE_BITS);
+        IReg.val = input;
+    }
+
+    //jumps to Register 0's value + offset
+    fn jumpOffset(
+        regZero: crate::hardware::Register,
+        input: u16,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) {
+        assert!(input <= TWELVE_BITS);
+        program_counter.val = regZero.val as u16 + input;
     }
 }
 
