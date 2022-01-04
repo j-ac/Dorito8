@@ -39,6 +39,10 @@ mod hardware {
         pub val: u16,
     }
 
+    pub struct Keys {
+        pub key: [bool; 16],
+    }
+
     pub struct ProgramCounter {
         pub val: u16,
     }
@@ -85,6 +89,7 @@ mod opcode {
 
     use crate::EIGHT_BITS;
     use crate::TWELVE_BITS;
+    use rand::prelude::*;
 
     // Jump to a routine
     fn sys() -> u16 {
@@ -258,13 +263,41 @@ mod opcode {
     }
 
     //jumps to Register 0's value + offset
-    fn jumpOffset(
+    fn jump_off_set(
         regZero: crate::hardware::Register,
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
     ) {
         assert!(input <= TWELVE_BITS);
         program_counter.val = regZero.val as u16 + input;
+    }
+
+    // random number generator. Binary AND against an input.
+    fn rnd(destReg: &mut crate::hardware::Register, input: u8) {
+        let rng: u8 = random();
+        destReg.val = rng & input;
+    }
+
+    fn draw() {} //TODO
+
+    fn skip_if_key_pressed(
+        reg: crate::hardware::Register,
+        program_counter: &mut crate::hardware::ProgramCounter,
+        keys: crate::hardware::Keys,
+    ) {
+        if keys.key[reg.val as usize] == true {
+            program_counter.val += 2;
+        }
+    }
+
+    fn skip_if_key_not_pressed(
+        reg: crate::hardware::Register,
+        program_counter: &mut crate::hardware::ProgramCounter,
+        keys: crate::hardware::Keys,
+    ) {
+        if keys.key[reg.val as usize] == false {
+            program_counter.val += 2;
+        }
     }
 }
 
