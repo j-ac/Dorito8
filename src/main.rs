@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::io::Read;
 use std::io::Seek;
 use std::path::PathBuf;
@@ -5,6 +6,8 @@ use structopt::StructOpt;
 
 const TWELVE_BITS: u16 = 0xFFF;
 const EIGHT_BITS: u16 = 0xFF;
+const MEM_SIZE: usize = 4096;
+
 #[derive(StructOpt, Debug)]
 
 struct Opt {
@@ -28,6 +31,8 @@ fn main() {
 }
 
 mod hardware {
+
+    use crate::MEM_SIZE;
     use std::ops::Deref;
 
     #[derive(Default)]
@@ -62,7 +67,7 @@ mod hardware {
     }
 
     pub struct Memory {
-        pub memory: [u8; 4096],
+        pub indices: [u8; MEM_SIZE],
     }
 
     #[derive(Default)]
@@ -83,11 +88,21 @@ mod hardware {
             returner
         }
     }
+
+    pub struct System {
+        registers: [Register; 16],
+        mem: Memory,
+        ireg: IRegister,
+        pc: ProgramCounter,
+        sp: Stack,
+        keyboard: Keys,
+    }
 }
 
 mod opcode {
 
     use crate::EIGHT_BITS;
+    use crate::MEM_SIZE;
     use crate::TWELVE_BITS;
     use rand::prelude::*;
 
@@ -98,7 +113,11 @@ mod opcode {
     }
 
     // Clear the display
-    fn cls(memory: &mut crate::hardware::Memory) { //TODO
+    fn cls(memory: &mut crate::hardware::Memory) {
+        //TODO
+        for i in 0..MEM_SIZE {
+            memory.indices[i] = 0;
+        }
     }
 
     //Return from subroutine (pops the address from the top of the stack)
@@ -257,25 +276,25 @@ mod opcode {
     }
 
     // Load a constant into the IRegister
-    fn ld_into_i(IReg: &mut crate::hardware::IRegister, input: u16) {
+    fn ld_into_i(i_reg: &mut crate::hardware::IRegister, input: u16) {
         assert!(input <= TWELVE_BITS);
-        IReg.val = input;
+        i_reg.val = input;
     }
 
     //jumps to Register 0's value + offset
     fn jump_off_set(
-        regZero: crate::hardware::Register,
+        reg_zero: crate::hardware::Register,
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
     ) {
         assert!(input <= TWELVE_BITS);
-        program_counter.val = regZero.val as u16 + input;
+        program_counter.val = reg_zero.val as u16 + input;
     }
 
     // random number generator. Binary AND against an input.
-    fn rnd(destReg: &mut crate::hardware::Register, input: u8) {
-        let rng: u8 = random();
-        destReg.val = rng & input;
+    fn rnd<T: RngCore>(dest_reg: &mut crate::hardware::Register, input: u8, rng: &mut T) {
+        let random: u8 = rng.gen();
+        dest_reg.val = random & input;
     }
 
     fn draw() {} //TODO
@@ -285,7 +304,7 @@ mod opcode {
         program_counter: &mut crate::hardware::ProgramCounter,
         keys: crate::hardware::Keys,
     ) {
-        if keys.key[reg.val as usize] == true {
+        if keys.key[reg.val as usize] {
             program_counter.val += 2;
         }
     }
@@ -295,7 +314,7 @@ mod opcode {
         program_counter: &mut crate::hardware::ProgramCounter,
         keys: crate::hardware::Keys,
     ) {
-        if keys.key[reg.val as usize] == false {
+        if keys.key[reg.val as usize] {
             program_counter.val += 2;
         }
     }
