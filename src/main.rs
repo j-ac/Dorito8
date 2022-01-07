@@ -35,7 +35,7 @@ mod hardware {
     use crate::MEM_SIZE;
     use std::ops::Deref;
 
-    #[derive(Default)]
+    #[derive(Default, Copy, Clone)]
     pub struct Register {
         pub val: u8,
     }
@@ -96,6 +96,23 @@ mod hardware {
         pc: ProgramCounter,
         sp: Stack,
         keyboard: Keys,
+    }
+    impl System {
+        pub fn new() -> Self {
+            Self {
+                registers: [Register { val: 0 }; 16],
+                mem: Memory {
+                    indices: [0; MEM_SIZE],
+                },
+                ireg: IRegister { val: 0 },
+                pc: ProgramCounter { val: 0 },
+                sp: Stack {
+                    sp: 0,
+                    stack: [0; 16],
+                },
+                keyboard: Keys { key: [false; 16] },
+            }
+        }
     }
 }
 
