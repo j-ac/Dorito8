@@ -6,7 +6,10 @@ use structopt::StructOpt;
 
 const TWELVE_BITS: u16 = 0xFFF;
 const EIGHT_BITS: u16 = 0xFF;
+const FOUR_BITS: u16 = 0xF;
 const MEM_SIZE: usize = 4096;
+const SCREEN_WIDTH: u8 = 64;
+const SCREEN_HEIGHT: u8 = 32;
 
 #[derive(StructOpt, Debug)]
 
@@ -28,6 +31,8 @@ fn main() {
     if opt.verbose {
         println!("input params: {:?}", opt);
     }
+
+    let sys = hardware::System::new();
 }
 
 mod hardware {
@@ -70,6 +75,10 @@ mod hardware {
         pub indices: [u8; MEM_SIZE],
     }
 
+    pub struct Display {
+        pub data: [[bool; 64]; 32],
+    }
+
     #[derive(Default)]
     pub struct Stack {
         stack: [u16; 16],
@@ -96,6 +105,7 @@ mod hardware {
         pc: ProgramCounter,
         sp: Stack,
         keyboard: Keys,
+        disp: Display,
     }
     impl System {
         pub fn new() -> Self {
@@ -111,16 +121,24 @@ mod hardware {
                     stack: [0; 16],
                 },
                 keyboard: Keys { key: [false; 16] },
+                disp: Display {
+                    data: [[false; 64]; 32],
+                },
             }
         }
     }
 }
 
 mod opcode {
-
-    use crate::EIGHT_BITS;
+    use crate::EIGHT_BITS; //0xFF
+    use crate::FOUR_BITS; //0xF
     use crate::MEM_SIZE;
-    use crate::TWELVE_BITS;
+    use crate::SCREEN_HEIGHT;
+    use crate::SCREEN_WIDTH;
+    use crate::TWELVE_BITS; //0xFFF //4096
+
+    use crate::convert_u8_to_boolarr;
+
     use rand::prelude::*;
 
     // Jump to a routine
@@ -130,11 +148,8 @@ mod opcode {
     }
 
     // Clear the display
-    fn cls(memory: &mut crate::hardware::Memory) {
-        //TODO
-        for i in 0..MEM_SIZE {
-            memory.indices[i] = 0;
-        }
+    fn cls(dis: &mut crate::hardware::Display) {
+        dis.data = [[false; 64]; 32];
     }
 
     //Return from subroutine (pops the address from the top of the stack)
@@ -314,7 +329,38 @@ mod opcode {
         dest_reg.val = random & input;
     }
 
-    fn draw() {} //TODO
+    fn draw(
+        dis: &mut crate::hardware::Display,
+        mem: crate::hardware::Memory,
+        reg_x: crate::hardware::Register,
+        reg_y: crate::hardware::Register,
+        nibble: u8,
+        memory_position: &mut crate::hardware::IRegister,
+        collision_detect_register: &mut crate::hardware::Register, // indicates collision with an existing sprite
+    ) {
+        assert!(nibble <= FOUR_BITS as u8);
+
+        for y in 0..nibble {
+            //nible indicates the number of bytes (layers)
+            let byte = mem.indices[(memory_position.val + y as u16) as usize]; //load in a single layer of the sprite
+            let byte_as_bool_array = convert_u8_to_boolarr(byte);
+
+            for x in 0..8 {
+                let x_coordinate: usize = ((reg_x.val + x) % SCREEN_WIDTH) as usize;
+                let y_coordinate: usize = ((reg_y.val + y) % SCREEN_HEIGHT) as usize;
+
+                if (dis.data[x_coordinate][y_coordinate] == true) //ie if the xor will delete a pixel
+                    && (byte_as_bool_array[x as usize] == true)
+                {
+                    collision_detect_register.val = 1;
+                }
+
+                dis.data[x_coordinate][y_coordinate] =
+                    dis.data[x_coordinate][y_coordinate] ^ byte_as_bool_array[x as usize];
+                //insert the sprite by XORing
+            }
+        }
+    }
 
     fn skip_if_key_pressed(
         reg: crate::hardware::Register,
@@ -335,6 +381,18 @@ mod opcode {
             program_counter.val += 2;
         }
     }
+}
+
+fn convert_u8_to_boolarr(byte: u8) -> [bool; 8] {
+    let mut boolarr: [bool; 8] = [false; 8];
+
+    for i in 0..8 {
+        let mut byte = byte;
+        byte = byte >> i;
+        boolarr[i] = (byte >> i) == 0b1;
+    }
+
+    boolarr
 }
 
 fn run_game<R: Read + Seek>(rom: &R) {}
