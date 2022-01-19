@@ -10,7 +10,7 @@ const FOUR_BITS: u16 = 0xF;
 const MEM_SIZE: usize = 4096;
 const SCREEN_WIDTH: u8 = 64;
 const SCREEN_HEIGHT: u8 = 32;
-
+const NUM_REGISTERS: usize = 16;
 #[derive(StructOpt, Debug)]
 
 struct Opt {
@@ -38,6 +38,7 @@ fn main() {
 mod hardware {
 
     use crate::MEM_SIZE;
+    use crate::NUM_REGISTERS;
     use std::ops::Deref;
 
     #[derive(Default, Copy, Clone)]
@@ -120,7 +121,7 @@ mod hardware {
     impl System {
         pub fn new() -> Self {
             Self {
-                registers: [Register { val: 0 }; 16],
+                registers: [Register { val: 0 }; NUM_REGISTERS],
                 mem: Memory {
                     indices: [0; MEM_SIZE],
                 },
@@ -143,14 +144,14 @@ mod hardware {
 }
 
 mod opcode {
+    use crate::convert_u8_to_boolarr;
     use crate::EIGHT_BITS; //0xFF
     use crate::FOUR_BITS; //0xF
     use crate::MEM_SIZE;
+    use crate::NUM_REGISTERS; //16
     use crate::SCREEN_HEIGHT;
     use crate::SCREEN_WIDTH;
     use crate::TWELVE_BITS; //0xFFF //4096
-
-    use crate::convert_u8_to_boolarr;
 
     use rand::prelude::*;
 
@@ -352,6 +353,7 @@ mod opcode {
         collision_detect_register: &mut crate::hardware::Register, // indicates collision with an existing sprite
     ) {
         assert!(nibble <= FOUR_BITS as u8);
+        assert!(memory_position.val + ((nibble - 1) as u16) <= MEM_SIZE as u16);
 
         for y in 0..nibble {
             //nible indicates the number of bytes (layers)
@@ -403,17 +405,20 @@ mod opcode {
         reg.val = timer.time;
     }
 
+    //stop execution until a key is pressed and record the key that was pressed.
     fn suspend_program_and_store_next_keypress() -> u8 {
         //TODO
         0
     }
 
+    //Set the value of the delay timer
     fn set_delay_timer(timer: &mut crate::hardware::DelayTimer, reg: crate::hardware::Register) {
         timer.time = reg.val;
     }
 
+    //add a value to the i_reg from another register
     fn add_i_reg(i_reg: &mut crate::hardware::IRegister, reg: crate::hardware::Register) {
-        i_reg.val = i_reg.val + reg.val as u16;
+        i_reg.val = i_reg.val.wrapping_add(reg.val as u16);
     }
 
     // set the I register to the memory address containing the sprite representing the numeral
@@ -430,6 +435,8 @@ mod opcode {
         reg: crate::hardware::Register,
         mem: &mut crate::hardware::Memory,
     ) {
+        assert!(i_reg.val + 2 <= MEM_SIZE as u16);
+
         let hundreds_place = reg.val / 100; //Rust rounds down the remainder
         let tens_place = (reg.val % 100) / 10;
         let ones_place = reg.val % 10;
@@ -443,11 +450,14 @@ mod opcode {
     //Store the first N registers to memory sequentially, where N is the value of the input
     //register.
     fn store_first_n_registers_in_memory(
-        reg_array: [crate::hardware::Register; 16],
+        reg_array: [crate::hardware::Register; NUM_REGISTERS],
         i_reg: crate::hardware::IRegister,
         mem: &mut crate::hardware::Memory,
-        reg: crate::hardware::Register,
+        reg: crate::hardware::Register, //contains the number of registers to store
     ) {
+        assert!(i_reg.val + (reg.val - 1) as u16 <= MEM_SIZE as u16); //enough space to store the data
+        assert!(reg.val <= NUM_REGISTERS as u8); //Spec does not define what would occur in this scenario.
+
         for register_number in 0..reg.val {
             mem.indices[(i_reg.val + register_number as u16) as usize] =
                 reg_array[register_number as usize].val;
