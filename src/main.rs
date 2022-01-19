@@ -114,6 +114,8 @@ mod hardware {
         sp: Stack,
         keyboard: Keys,
         disp: Display,
+        sound: SoundTimer,
+        delay: DelayTimer,
     }
     impl System {
         pub fn new() -> Self {
@@ -132,6 +134,9 @@ mod hardware {
                 disp: Display {
                     data: [[false; 64]; 32],
                 },
+
+                sound: SoundTimer { time: 0 },
+                delay: DelayTimer { time: 0 },
             }
         }
     }
