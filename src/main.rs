@@ -79,6 +79,14 @@ mod hardware {
         pub data: [[bool; 64]; 32],
     }
 
+    pub struct DelayTimer {
+        pub time: u8,
+    }
+
+    pub struct SoundTimer {
+        pub time: u8,
+    }
+
     #[derive(Default)]
     pub struct Stack {
         stack: [u16; 16],
@@ -380,6 +388,69 @@ mod opcode {
         if keys.key[reg.val as usize] {
             program_counter.val += 2;
         }
+    }
+
+    //save the delay timer value into a register
+    fn save_delay_timer_value(
+        timer: crate::hardware::DelayTimer,
+        reg: &mut crate::hardware::Register,
+    ) {
+        reg.val = timer.time;
+    }
+
+    fn suspend_program_and_store_next_keypress() -> u8 {
+        //TODO
+        0
+    }
+
+    fn set_delay_timer(timer: &mut crate::hardware::DelayTimer, reg: crate::hardware::Register) {
+        timer.time = reg.val;
+    }
+
+    fn add_i_reg(i_reg: &mut crate::hardware::IRegister, reg: crate::hardware::Register) {
+        i_reg.val = i_reg.val + reg.val as u16;
+    }
+
+    // set the I register to the memory address containing the sprite representing the numeral
+    // stored in the register.
+    fn load_hardcoded_sprite() {
+        //TODO (haven't hardcoded the sprites yet)
+    }
+
+    //converts a binary value in a register to a decimal value then saves its digits to memory
+    //sequentially
+    //example: 1111 1111 = 255. Saves in three sequential memory addresses '2' '5' '5'
+    fn save_decimal_value_to_memory(
+        i_reg: crate::hardware::IRegister,
+        reg: crate::hardware::Register,
+        mem: &mut crate::hardware::Memory,
+    ) {
+        let hundreds_place = reg.val / 100; //Rust rounds down the remainder
+        let tens_place = (reg.val % 100) / 10;
+        let ones_place = reg.val % 10;
+
+        let i = i_reg.val as usize; //for conciseness
+        mem.indices[i] = hundreds_place;
+        mem.indices[i + 1] = tens_place;
+        mem.indices[i + 2] = ones_place;
+    }
+
+    //Store the first N registers to memory sequentially, where N is the value of the input
+    //register.
+    fn store_first_n_registers_in_memory(
+        reg_array: [crate::hardware::Register; 16],
+        i_reg: crate::hardware::IRegister,
+        mem: &mut crate::hardware::Memory,
+        reg: crate::hardware::Register,
+    ) {
+        for register_number in 0..reg.val {
+            mem.indices[(i_reg.val + register_number as u16) as usize] =
+                reg_array[register_number as usize].val;
+        }
+    }
+
+    fn retrieve_first_n_registers_from_memory() {
+        //TODO
     }
 }
 
