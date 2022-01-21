@@ -11,6 +11,25 @@ const MEM_SIZE: usize = 4096;
 const SCREEN_WIDTH: u8 = 64;
 const SCREEN_HEIGHT: u8 = 32;
 const NUM_REGISTERS: usize = 16;
+const FONT: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+];
+
 #[derive(StructOpt, Debug)]
 
 struct Opt {
@@ -32,11 +51,12 @@ fn main() {
         println!("input params: {:?}", opt);
     }
 
-    let sys = hardware::System::new();
+    let mut sys = hardware::System::new();
 }
 
 mod hardware {
 
+    use crate::FONT;
     use crate::MEM_SIZE;
     use crate::NUM_REGISTERS;
     use std::ops::Deref;
@@ -74,6 +94,14 @@ mod hardware {
 
     pub struct Memory {
         pub indices: [u8; MEM_SIZE],
+    }
+
+    impl Memory {
+        fn load_in_hardcoded_sprites(&mut self) {
+            for i in 0..FONT.len() {
+                self.indices[i] = FONT[i];
+            }
+        }
     }
 
     pub struct Display {
@@ -120,11 +148,14 @@ mod hardware {
     }
     impl System {
         pub fn new() -> Self {
+            let mut mem = Memory {
+                indices: [0; MEM_SIZE],
+            };
+            mem.load_in_hardcoded_sprites();
+
             Self {
                 registers: [Register { val: 0 }; NUM_REGISTERS],
-                mem: Memory {
-                    indices: [0; MEM_SIZE],
-                },
+                mem,
                 ireg: IRegister { val: 0 },
                 pc: ProgramCounter { val: 0 },
                 sp: Stack {
@@ -398,6 +429,7 @@ mod opcode {
     }
 
     //save the delay timer value into a register
+    //opcode: FX15
     fn save_delay_timer_value(
         timer: crate::hardware::DelayTimer,
         reg: &mut crate::hardware::Register,
@@ -406,23 +438,27 @@ mod opcode {
     }
 
     //stop execution until a key is pressed and record the key that was pressed.
+    //opcode: FX0A
     fn suspend_program_and_store_next_keypress() -> u8 {
         //TODO
         0
     }
 
     //Set the value of the delay timer
+    //opcode FX15
     fn set_delay_timer(timer: &mut crate::hardware::DelayTimer, reg: crate::hardware::Register) {
         timer.time = reg.val;
     }
 
     //add a value to the i_reg from another register
+    //opcode: FX1E
     fn add_i_reg(i_reg: &mut crate::hardware::IRegister, reg: crate::hardware::Register) {
         i_reg.val = i_reg.val.wrapping_add(reg.val as u16);
     }
 
     // set the I register to the memory address containing the sprite representing the numeral
     // stored in the register.
+    // opcode: FX29
     fn load_hardcoded_sprite() {
         //TODO (haven't hardcoded the sprites yet)
     }
@@ -430,6 +466,7 @@ mod opcode {
     //converts a binary value in a register to a decimal value then saves its digits to memory
     //sequentially
     //example: 1111 1111 = 255. Saves in three sequential memory addresses '2' '5' '5'
+    //opcode: FX33
     fn save_decimal_value_to_memory(
         i_reg: crate::hardware::IRegister,
         reg: crate::hardware::Register,
@@ -464,11 +501,23 @@ mod opcode {
         }
     }
 
-    fn retrieve_first_n_registers_from_memory() {
-        //TODO
+    fn retrieve_first_n_registers_from_memory(
+        mem: crate::hardware::Memory,
+        reg_array: &mut [crate::hardware::Register; NUM_REGISTERS],
+        i_reg: crate::hardware::IRegister,
+        reg: crate::hardware::Register, //number of registers to read
+    ) {
+        assert!(i_reg.val + ((reg.val - 1) as u16) <= MEM_SIZE as u16);
+        assert!(reg.val <= NUM_REGISTERS as u8);
+
+        for register_number in 0..reg.val {
+            reg_array[register_number as usize].val =
+                mem.indices[(i_reg.val + register_number as u16) as usize];
+        }
     }
 }
 
+//Represent a u8 as a boolean array of its binary representation
 fn convert_u8_to_boolarr(byte: u8) -> [bool; 8] {
     let mut boolarr: [bool; 8] = [false; 8];
 
