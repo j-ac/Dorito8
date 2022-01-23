@@ -53,6 +53,37 @@ fn main() {
     }
 
     let mut sys = hardware::System::new(opt.file);
+
+    loop {
+        let opcode: u16 = fetch(&mut sys.pc, &sys.mem);
+        let opcode = 0; //TODO make opcode the result of decode()
+        let pc_increment = execute(opcode);
+        sys.pc.val += match pc_increment {
+            ProgramCounterPolicy::NoIncrement => 0,
+            ProgramCounterPolicy::StandardIncrement => 2,
+            ProgramCounterPolicy::DoubleIncrement => 4,
+        };
+    }
+}
+
+fn fetch(pc: &mut hardware::ProgramCounter, mem: &hardware::Memory) -> u16 {
+    let mut opcode: u16 = ((mem.indices[pc.val as usize]) as u16) << 8;
+    opcode += mem.indices[(pc.val + 1) as usize] as u16;
+    opcode
+}
+
+fn decode() {
+    //TODO
+}
+
+fn execute(opcode: u16) -> ProgramCounterPolicy {
+    ProgramCounterPolicy::NoIncrement //TODO
+}
+
+enum ProgramCounterPolicy {
+    NoIncrement,
+    StandardIncrement,
+    DoubleIncrement,
 }
 
 mod hardware {
@@ -62,7 +93,6 @@ mod hardware {
     use crate::NUM_REGISTERS;
     use crate::PROGRAM_START_POINT;
     use std::fs::File;
-    use std::io;
     use std::io::prelude::*;
     use std::ops::Deref;
     use std::path::PathBuf;
@@ -150,15 +180,15 @@ mod hardware {
     }
 
     pub struct System {
-        registers: [Register; 16],
-        mem: Memory,
-        ireg: IRegister,
-        pc: ProgramCounter,
-        sp: Stack,
-        keyboard: Keys,
-        disp: Display,
-        sound: SoundTimer,
-        delay: DelayTimer,
+        pub registers: [Register; 16],
+        pub mem: Memory,
+        pub ireg: IRegister,
+        pub pc: ProgramCounter,
+        pub sp: Stack,
+        pub keyboard: Keys,
+        pub disp: Display,
+        pub sound: SoundTimer,
+        pub delay: DelayTimer,
     }
     impl System {
         pub fn new(rom: PathBuf) -> Self {
@@ -191,6 +221,7 @@ mod hardware {
 
 mod opcode {
     use crate::convert_u8_to_boolarr;
+    use crate::ProgramCounterPolicy;
     use crate::EIGHT_BITS; //0xFF
     use crate::FOUR_BITS; //0xF
     use crate::MEM_SIZE;
@@ -208,8 +239,10 @@ mod opcode {
     }
 
     // Clear the display
-    fn cls(dis: &mut crate::hardware::Display) {
+    fn cls(dis: &mut crate::hardware::Display) -> ProgramCounterPolicy {
         dis.data = [[false; 64]; 32];
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //Return from subroutine (pops the address from the top of the stack)
