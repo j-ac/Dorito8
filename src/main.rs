@@ -11,6 +11,7 @@ const MEM_SIZE: usize = 4096;
 const SCREEN_WIDTH: u8 = 64;
 const SCREEN_HEIGHT: u8 = 32;
 const NUM_REGISTERS: usize = 16;
+const PROGRAM_START_POINT: usize = 512;
 const FONT: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -51,7 +52,7 @@ fn main() {
         println!("input params: {:?}", opt);
     }
 
-    let mut sys = hardware::System::new();
+    let mut sys = hardware::System::new(opt.file);
 }
 
 mod hardware {
@@ -59,7 +60,12 @@ mod hardware {
     use crate::FONT;
     use crate::MEM_SIZE;
     use crate::NUM_REGISTERS;
+    use crate::PROGRAM_START_POINT;
+    use std::fs::File;
+    use std::io;
+    use std::io::prelude::*;
     use std::ops::Deref;
+    use std::path::PathBuf;
 
     #[derive(Default, Copy, Clone)]
     pub struct Register {
@@ -100,6 +106,14 @@ mod hardware {
         fn load_in_hardcoded_sprites(&mut self) {
             for i in 0..FONT.len() {
                 self.indices[i] = FONT[i];
+            }
+        }
+
+        fn load_rom(&mut self, rom: PathBuf) {
+            let data = File::open(rom).unwrap();
+
+            for (i, byte) in data.bytes().enumerate() {
+                self.indices[PROGRAM_START_POINT + i] = byte.unwrap();
             }
         }
     }
@@ -147,11 +161,12 @@ mod hardware {
         delay: DelayTimer,
     }
     impl System {
-        pub fn new() -> Self {
+        pub fn new(rom: PathBuf) -> Self {
             let mut mem = Memory {
                 indices: [0; MEM_SIZE],
             };
             mem.load_in_hardcoded_sprites();
+            mem.load_rom(rom);
 
             Self {
                 registers: [Register { val: 0 }; NUM_REGISTERS],
@@ -459,8 +474,12 @@ mod opcode {
     // set the I register to the memory address containing the sprite representing the numeral
     // stored in the register.
     // opcode: FX29
-    fn load_hardcoded_sprite() {
-        //TODO (haven't hardcoded the sprites yet)
+    fn load_hardcoded_sprite(
+        i_reg: &mut crate::hardware::IRegister,
+        digit: crate::hardware::Register,
+    ) {
+        assert!(digit.val <= 0xF); //Documentation doesn't specify what to do in this instance
+        i_reg.val = (digit.val * 5) as u16; //Sprites are 5 bytes
     }
 
     //converts a binary value in a register to a decimal value then saves its digits to memory
