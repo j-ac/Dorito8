@@ -163,7 +163,7 @@ mod hardware {
     #[derive(Default)]
     pub struct Stack {
         stack: [u16; 16],
-        sp: usize,
+        pub sp: usize,
     }
 
     impl Stack {
@@ -239,6 +239,7 @@ mod opcode {
     }
 
     // Clear the display
+
     fn cls(dis: &mut crate::hardware::Display) -> ProgramCounterPolicy {
         dis.data = [[false; 64]; 32];
 
@@ -249,14 +250,21 @@ mod opcode {
     fn ret(
         stack: &mut crate::hardware::Stack,
         program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
+    ) -> ProgramCounterPolicy {
         program_counter.set(stack.pop());
+
+        ProgramCounterPolicy::StandardIncrement //So that it does not call the subroutine infinitely
     }
 
     // Jump to location
-    fn jp(input: u16, program_counter: &mut crate::hardware::ProgramCounter) {
+    fn jp(
+        input: u16,
+        program_counter: &mut crate::hardware::ProgramCounter,
+    ) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS); // value not exceeding 0xFFF
         program_counter.set(input);
+
+        ProgramCounterPolicy::NoIncrement
     }
 
     // Call subroutine. Push PC to stack then jump to the given value
@@ -264,115 +272,141 @@ mod opcode {
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
         stack: &mut crate::hardware::Stack,
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS);
+
         stack.push(program_counter.val);
         program_counter.set(input);
+
+        ProgramCounterPolicy::NoIncrement
     }
 
     // Skip if equal
-    fn se_const_vs_reg(
-        input: u8,
-        register: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
+    fn se_const_vs_reg(input: u8, register: crate::hardware::Register) -> ProgramCounterPolicy {
         if input == register.val {
-            program_counter.val += 2; //Skip one instruction
+            ProgramCounterPolicy::DoubleIncrement
+        } else {
+            ProgramCounterPolicy::StandardIncrement
         }
     }
     //skip if not equal
-    fn sne_const_vs_reg(
-        input: u8,
-        register: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
+    fn sne_const_vs_reg(input: u8, register: crate::hardware::Register) -> ProgramCounterPolicy {
         if input != register.val {
-            program_counter.val += 2;
-        } //Skip one instruction
+            ProgramCounterPolicy::DoubleIncrement
+        } else {
+            ProgramCounterPolicy::StandardIncrement
+        }
     }
 
     fn se_reg_vs_reg(
         reg1: crate::hardware::Register,
         reg2: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
+    ) -> ProgramCounterPolicy {
         if reg1.val == reg2.val {
-            program_counter.val += 2;
+            ProgramCounterPolicy::DoubleIncrement
+        } else {
+            ProgramCounterPolicy::StandardIncrement
         }
     }
 
     fn sne_reg_vs_reg(
         reg1: crate::hardware::Register,
         reg2: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
+    ) -> ProgramCounterPolicy {
         if reg1.val != reg2.val {
-            program_counter.val += 2;
+            ProgramCounterPolicy::DoubleIncrement
+        } else {
+            ProgramCounterPolicy::StandardIncrement
         }
     }
 
     // Load? seems like a bad naming convention...
-    fn ld(register: &mut crate::hardware::Register, input: u8) {
-        register.val = input
+    fn ld(register: &mut crate::hardware::Register, input: u8) -> ProgramCounterPolicy {
+        register.val = input;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // add constant to register
-    fn add(input: u8, reg: &mut crate::hardware::Register) {
+    fn add(input: u8, reg: &mut crate::hardware::Register) -> ProgramCounterPolicy {
         reg.val = reg.val.wrapping_add(input); //Documentation does not state an overflow policy. Will assume wrapping
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // bitwise or on two registers
-    fn or(reg1: &mut crate::hardware::Register, reg2: crate::hardware::Register) {
+    fn or(
+        reg1: &mut crate::hardware::Register,
+        reg2: crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
         reg1.val = reg1.val | reg2.val;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // bitwise and on two registers
-    fn and(reg1: &mut crate::hardware::Register, reg2: crate::hardware::Register) {
+    fn and(
+        reg1: &mut crate::hardware::Register,
+        reg2: crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
         reg1.val = reg1.val & reg2.val;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // bitwise xor on two registers
-    fn xor(reg1: &mut crate::hardware::Register, reg2: crate::hardware::Register) {
+    fn xor(
+        reg1: &mut crate::hardware::Register,
+        reg2: crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
         reg1.val = reg1.val ^ reg2.val;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     fn add_two_regs(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
-    ) {
+    ) -> ProgramCounterPolicy {
         //Differs from add() by the args and uses overflow detection
         if (reg1.val as u16 + reg2.val as u16) > EIGHT_BITS {
             overflow_flag.val = 1;
         }
 
         reg1.val = reg1.val.wrapping_add(reg2.val);
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     fn sub(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
-    ) {
+    ) -> ProgramCounterPolicy {
         if reg1.val > reg2.val {
             overflow_flag.val = 1;
         } else {
             overflow_flag.val = 0; //This might be a failing of the documentation. THis function explicitly says to set to 0 but other similar functions don't specify
         }
 
-        reg1.val = reg1.val.wrapping_sub(reg2.val); //Overflow policy not stated, assuming wrapping subtraction.
+        reg1.val = reg1.val.wrapping_sub(reg2.val);
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //shift register
     fn shr(
         reg: &mut crate::hardware::Register,
         fraction_truncated_flag: &mut crate::hardware::Register,
-    ) {
+    ) -> ProgramCounterPolicy {
         let reg_is_odd: bool = reg.val % 2 == 1;
         if reg_is_odd {
             fraction_truncated_flag.val = 1;
         }
-        reg.val = reg.val / 2;
+        reg.val = reg.val >> 1; //TODO: May need to be replaced with a function to handle overflow.
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // Reversed operands order compared to sub()
@@ -380,30 +414,39 @@ mod opcode {
         reg1: &mut crate::hardware::Register,
         reg2: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
-    ) {
+    ) -> ProgramCounterPolicy {
         if reg2.val > reg1.val {
             overflow_flag.val = 1;
         } else {
             overflow_flag.val = 0;
         }
 
-        reg1.val = reg2.val - reg1.val;
+        reg1.val = reg2.val.wrapping_sub(reg1.val);
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // shift left.
     // Might result in bits "falling off" the edge
-    fn shl(reg: &mut crate::hardware::Register, overflow_flag: &mut crate::hardware::Register) {
+    fn shl(
+        reg: &mut crate::hardware::Register,
+        overflow_flag: &mut crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
         if reg.val >= 0b_1000_0000 {
             //ie if the most significant bit is 1
             overflow_flag.val = 1;
         }
-        reg.val *= 2;
+        reg.val = reg.val << 1; //TODO: May need to be replaced with a function to handle overflow
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // Load a constant into the IRegister
-    fn ld_into_i(i_reg: &mut crate::hardware::IRegister, input: u16) {
+    fn ld_into_i(i_reg: &mut crate::hardware::IRegister, input: u16) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS);
         i_reg.val = input;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //jumps to Register 0's value + offset
@@ -411,15 +454,23 @@ mod opcode {
         reg_zero: crate::hardware::Register,
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS);
         program_counter.val = reg_zero.val as u16 + input;
+
+        ProgramCounterPolicy::NoIncrement
     }
 
     // random number generator. Binary AND against an input.
-    fn rnd<T: RngCore>(dest_reg: &mut crate::hardware::Register, input: u8, rng: &mut T) {
+    fn rnd<T: RngCore>(
+        dest_reg: &mut crate::hardware::Register,
+        input: u8,
+        rng: &mut T,
+    ) -> ProgramCounterPolicy {
         let random: u8 = rng.gen();
         dest_reg.val = random & input;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     fn draw(
@@ -430,7 +481,7 @@ mod opcode {
         nibble: u8,
         memory_position: &mut crate::hardware::IRegister,
         collision_detect_register: &mut crate::hardware::Register, // indicates collision with an existing sprite
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(nibble <= FOUR_BITS as u8);
         assert!(memory_position.val + ((nibble - 1) as u16) <= MEM_SIZE as u16);
 
@@ -454,25 +505,28 @@ mod opcode {
                 //insert the sprite by XORing
             }
         }
+        ProgramCounterPolicy::StandardIncrement
     }
 
     fn skip_if_key_pressed(
         reg: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
         keys: crate::hardware::Keys,
-    ) {
+    ) -> ProgramCounterPolicy {
         if keys.key[reg.val as usize] {
-            program_counter.val += 2;
+            ProgramCounterPolicy::DoubleIncrement
+        } else {
+            ProgramCounterPolicy::StandardIncrement
         }
     }
 
     fn skip_if_key_not_pressed(
         reg: crate::hardware::Register,
-        program_counter: &mut crate::hardware::ProgramCounter,
         keys: crate::hardware::Keys,
-    ) {
-        if keys.key[reg.val as usize] {
-            program_counter.val += 2;
+    ) -> ProgramCounterPolicy {
+        if !keys.key[reg.val as usize] {
+            ProgramCounterPolicy::DoubleIncrement
+        } else {
+            ProgramCounterPolicy::StandardIncrement
         }
     }
 
@@ -481,27 +535,41 @@ mod opcode {
     fn save_delay_timer_value(
         timer: crate::hardware::DelayTimer,
         reg: &mut crate::hardware::Register,
-    ) {
+    ) -> ProgramCounterPolicy {
         reg.val = timer.time;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //stop execution until a key is pressed and record the key that was pressed.
-    //opcode: FX0A
-    fn suspend_program_and_store_next_keypress() -> u8 {
+    //opcode: FX0Aa
+
+    fn suspend_program_and_store_next_keypress() -> ProgramCounterPolicy {
         //TODO
-        0
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //Set the value of the delay timer
     //opcode FX15
-    fn set_delay_timer(timer: &mut crate::hardware::DelayTimer, reg: crate::hardware::Register) {
+    fn set_delay_timer(
+        timer: &mut crate::hardware::DelayTimer,
+        reg: crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
         timer.time = reg.val;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //add a value to the i_reg from another register
     //opcode: FX1E
-    fn add_i_reg(i_reg: &mut crate::hardware::IRegister, reg: crate::hardware::Register) {
+    fn add_i_reg(
+        i_reg: &mut crate::hardware::IRegister,
+        reg: crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
         i_reg.val = i_reg.val.wrapping_add(reg.val as u16);
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     // set the I register to the memory address containing the sprite representing the numeral
@@ -510,9 +578,11 @@ mod opcode {
     fn load_hardcoded_sprite(
         i_reg: &mut crate::hardware::IRegister,
         digit: crate::hardware::Register,
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(digit.val <= 0xF); //Documentation doesn't specify what to do in this instance
         i_reg.val = (digit.val * 5) as u16; //Sprites are 5 bytes
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //converts a binary value in a register to a decimal value then saves its digits to memory
@@ -523,7 +593,7 @@ mod opcode {
         i_reg: crate::hardware::IRegister,
         reg: crate::hardware::Register,
         mem: &mut crate::hardware::Memory,
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(i_reg.val + 2 <= MEM_SIZE as u16);
 
         let hundreds_place = reg.val / 100; //Rust rounds down the remainder
@@ -534,6 +604,8 @@ mod opcode {
         mem.indices[i] = hundreds_place;
         mem.indices[i + 1] = tens_place;
         mem.indices[i + 2] = ones_place;
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     //Store the first N registers to memory sequentially, where N is the value of the input
@@ -543,7 +615,7 @@ mod opcode {
         i_reg: crate::hardware::IRegister,
         mem: &mut crate::hardware::Memory,
         reg: crate::hardware::Register, //contains the number of registers to store
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(i_reg.val + (reg.val - 1) as u16 <= MEM_SIZE as u16); //enough space to store the data
         assert!(reg.val <= NUM_REGISTERS as u8); //Spec does not define what would occur in this scenario.
 
@@ -551,6 +623,8 @@ mod opcode {
             mem.indices[(i_reg.val + register_number as u16) as usize] =
                 reg_array[register_number as usize].val;
         }
+
+        ProgramCounterPolicy::StandardIncrement
     }
 
     fn retrieve_first_n_registers_from_memory(
@@ -558,7 +632,7 @@ mod opcode {
         reg_array: &mut [crate::hardware::Register; NUM_REGISTERS],
         i_reg: crate::hardware::IRegister,
         reg: crate::hardware::Register, //number of registers to read
-    ) {
+    ) -> ProgramCounterPolicy {
         assert!(i_reg.val + ((reg.val - 1) as u16) <= MEM_SIZE as u16);
         assert!(reg.val <= NUM_REGISTERS as u8);
 
@@ -566,6 +640,7 @@ mod opcode {
             reg_array[register_number as usize].val =
                 mem.indices[(i_reg.val + register_number as u16) as usize];
         }
+        ProgramCounterPolicy::StandardIncrement
     }
 }
 
