@@ -398,13 +398,11 @@ mod opcode {
     //shift register
     fn shr(
         reg: &mut crate::hardware::Register,
-        fraction_truncated_flag: &mut crate::hardware::Register,
+        truncate_register: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
-        let reg_is_odd: bool = reg.val % 2 == 1;
-        if reg_is_odd {
-            fraction_truncated_flag.val = 1;
-        }
-        reg.val = reg.val >> 1; //TODO: May need to be replaced with a function to handle overflow.
+        let (value, did_truncate) = reg.val.overflowing_shr(1);
+        reg.val = value;
+        truncate_register.val = did_truncate as u8;
 
         ProgramCounterPolicy::StandardIncrement
     }
@@ -432,11 +430,9 @@ mod opcode {
         reg: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
-        if reg.val >= 0b_1000_0000 {
-            //ie if the most significant bit is 1
-            overflow_flag.val = 1;
-        }
-        reg.val = reg.val << 1; //TODO: May need to be replaced with a function to handle overflow
+        let (val, did_overflow) = reg.val.overflowing_shl(1);
+        reg.val = val;
+        overflow_flag.val = did_overflow as u8;
 
         ProgramCounterPolicy::StandardIncrement
     }
