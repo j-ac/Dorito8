@@ -83,25 +83,62 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
         (0x0, 0x0, 0xE, 0x0) => crate::opcode::cls(&mut sys.disp),
         (0x0, 0x0, 0xE, 0xE) => crate::opcode::ret(&mut sys.sp, &mut sys.pc),
         //(0x0, _, _, _) => crate::opcode::sys() TODO
-        (0x1, _, _, _) => crate::opcode::jp(opcode % TWELVE_BITS + 1, &mut sys.pc),
-        (0x2, _, _, _) => crate::opcode::call(opcode % TWELVE_BITS + 1, &mut sys.pc, &mut sys.sp),
+        (0x1, _, _, _) => crate::opcode::jp(opcode % (TWELVE_BITS + 1), &mut sys.pc),
+        (0x2, _, _, _) => crate::opcode::call(opcode % (TWELVE_BITS + 1), &mut sys.pc, &mut sys.sp),
 
         (0x3, _, _, _) => {
             assert!(nib2 <= 0xF); //nib2 contains a register number. there are only 16 registers.
+
             crate::opcode::se_const_vs_reg(
                 (opcode % (EIGHT_BITS + 1)) as u8,
                 sys.registers[nib2 as usize],
             )
         }
         (0x4, _, _, _) => {
-            assert!(nib2 <= 0xF); //nib 2 contains a regsiter number. There are only 16 registers.
+            assert!(nib2 <= 0xF); //nib 2 contains a register number. There are only 16 registers.
+
             crate::opcode::sne_const_vs_reg(
                 (opcode % (EIGHT_BITS + 1)) as u8,
                 sys.registers[nib2 as usize],
             )
         }
 
-        _ => ProgramCounterPolicy::StandardIncrement, //TODO make this return an error
+        (0x5, _, _, 0) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF); //nib 2 and 3 contain register numbers. There are only 16 registers
+
+            crate::opcode::se_reg_vs_reg(sys.registers[nib2 as usize], sys.registers[nib3 as usize])
+        }
+
+        (0x6, _, _, _) => {
+            assert!(nib2 <= 0xF); //nib2 contains a register number there are only 16 registers.
+
+            crate::opcode::ld(
+                &mut sys.registers[nib2 as usize],
+                (opcode % (EIGHT_BITS + 1)) as u8, //gets last two nibbles as a u8
+            )
+        }
+
+        (0x7, _, _, _) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::add(
+                (opcode % (EIGHT_BITS + 1)) as u8,
+                &mut sys.registers[nib2 as usize],
+            )
+        }
+
+        (0x8, _, _, 0) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            crate::opcode::load_val_reg_to_reg(
+                sys.registers[nib3 as usize],
+                &mut sys.registers[nib2 as usize],
+            )
+        }
+
+        (_, _, _, _) => panic!("Undefined opcode encountered: {:X}", opcode), //Print the opcode in hex
     }
 }
 
@@ -273,13 +310,14 @@ mod opcode {
     use rand::prelude::*;
 
     // Jump to a routine
+    // OPCODE: 0NNN
     pub fn sys() -> u16 {
         //TODO
         return 0;
     }
 
     // Clear the display
-
+    // OPCODE: 00E0
     pub fn cls(dis: &mut crate::hardware::Display) -> ProgramCounterPolicy {
         dis.data = [[false; 64]; 32];
 
@@ -287,6 +325,7 @@ mod opcode {
     }
 
     //Return from subroutine (pops the address from the top of the stack)
+    // OPCODE: 00EE
     pub fn ret(
         stack: &mut crate::hardware::Stack,
         program_counter: &mut crate::hardware::ProgramCounter,
@@ -297,6 +336,7 @@ mod opcode {
     }
 
     // Jump to location
+    // OPCODE: 1NNN
     pub fn jp(
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
@@ -308,6 +348,7 @@ mod opcode {
     }
 
     // Call subroutine. Push PC to stack then jump to the given value
+    // OPCODE: 2NNN
     pub fn call(
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
@@ -322,6 +363,7 @@ mod opcode {
     }
 
     // Skip if equal
+    // OPCODE: 3XKK
     pub fn se_const_vs_reg(input: u8, register: crate::hardware::Register) -> ProgramCounterPolicy {
         if input == register.val {
             ProgramCounterPolicy::DoubleIncrement
@@ -330,6 +372,7 @@ mod opcode {
         }
     }
     //skip if not equal
+    // OPCODE: 4XKK
     pub fn sne_const_vs_reg(
         input: u8,
         register: crate::hardware::Register,
@@ -341,6 +384,8 @@ mod opcode {
         }
     }
 
+    //skip if not equal
+    // OPCODE: 5XY0
     pub fn se_reg_vs_reg(
         reg1: crate::hardware::Register,
         reg2: crate::hardware::Register,
@@ -352,6 +397,8 @@ mod opcode {
         }
     }
 
+    // skip if not equal
+    // OPCODE: 9XY0
     pub fn sne_reg_vs_reg(
         reg1: crate::hardware::Register,
         reg2: crate::hardware::Register,
@@ -364,6 +411,7 @@ mod opcode {
     }
 
     // Load? seems like a bad naming convention...
+    // OPCODE: 6XKK
     pub fn ld(register: &mut crate::hardware::Register, input: u8) -> ProgramCounterPolicy {
         register.val = input;
 
@@ -371,13 +419,26 @@ mod opcode {
     }
 
     // add constant to register
+    // OPCODE: 7XKK
     pub fn add(input: u8, reg: &mut crate::hardware::Register) -> ProgramCounterPolicy {
         reg.val = reg.val.wrapping_add(input); //Documentation does not state an overflow policy. Will assume wrapping
 
         ProgramCounterPolicy::StandardIncrement
     }
 
+    // Copy the value of reg2 into reg1
+    // OPCODE: 8XY0
+    pub fn load_val_reg_to_reg(
+        reg2: crate::hardware::Register,
+        reg1: &mut crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
+        reg1.val = reg2.val;
+
+        ProgramCounterPolicy::StandardIncrement
+    }
+
     // bitwise or on two registers
+    // OPCODE: 8XY1
     pub fn or(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
@@ -388,6 +449,7 @@ mod opcode {
     }
 
     // bitwise and on two registers
+    // OPCODE: 8XY2
     pub fn and(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
@@ -398,6 +460,7 @@ mod opcode {
     }
 
     // bitwise xor on two registers
+    // OPCODE: 8XY3
     pub fn xor(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
@@ -407,6 +470,7 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
+    // OPCODE: 8XY4
     pub fn add_two_regs(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
@@ -422,7 +486,8 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
-    pub fn sub(
+    // OPCODE: 8XY5
+    pub fn sub_two_regs(
         reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
@@ -439,6 +504,7 @@ mod opcode {
     }
 
     //shift register
+    // OPCODE: 9XY6
     pub fn shr(
         reg: &mut crate::hardware::Register,
         truncate_register: &mut crate::hardware::Register,
@@ -451,6 +517,7 @@ mod opcode {
     }
 
     // Reversed operands order compared to sub()
+    // OPCODE: 8XY7
     fn subn(
         reg1: &mut crate::hardware::Register,
         reg2: &mut crate::hardware::Register,
@@ -469,6 +536,7 @@ mod opcode {
 
     // shift left.
     // Might result in bits "falling off" the edge
+    //  OPCODE: 8XYE
     fn shl(
         reg: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
@@ -481,6 +549,7 @@ mod opcode {
     }
 
     // Load a constant into the IRegister
+    // OPCODE: ANNN
     fn ld_into_i(i_reg: &mut crate::hardware::IRegister, input: u16) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS);
         i_reg.val = input;
@@ -488,7 +557,8 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
-    //jumps to Register 0's value + offset
+    // jumps to Register 0's value + offset
+    // OPCODE: BNN
     fn jump_off_set(
         reg_zero: crate::hardware::Register,
         input: u16,
@@ -501,6 +571,7 @@ mod opcode {
     }
 
     // random number generator. Binary AND against an input.
+    // OPCODE: CXKK
     fn rnd<T: RngCore>(
         dest_reg: &mut crate::hardware::Register,
         input: u8,
@@ -512,6 +583,7 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
+    // OPCODE: DXYN
     fn draw(
         dis: &mut crate::hardware::Display,
         mem: crate::hardware::Memory,
@@ -547,6 +619,7 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
+    // OPCODE: EX9E
     fn skip_if_key_pressed(
         reg: crate::hardware::Register,
         keys: crate::hardware::Keys,
@@ -558,6 +631,7 @@ mod opcode {
         }
     }
 
+    // OPCODE: EXA1
     fn skip_if_key_not_pressed(
         reg: crate::hardware::Register,
         keys: crate::hardware::Keys,
@@ -581,7 +655,7 @@ mod opcode {
     }
 
     //stop execution until a key is pressed and record the key that was pressed.
-    //opcode: FX0Aa
+    //opcode: FX0A
 
     fn suspend_program_and_store_next_keypress() -> ProgramCounterPolicy {
         //TODO
