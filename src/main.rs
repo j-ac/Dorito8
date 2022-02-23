@@ -71,6 +71,7 @@ fn run_game(mut sys: crate::hardware::System) {
 }
 
 fn fetch(pc: &mut hardware::ProgramCounter, mem: &hardware::Memory) -> u16 {
+    //build the opcode in two stages. 8 most significant bits, then 8 least significant
     let mut opcode: u16 = ((mem.indices[pc.val as usize]) as u16) << 8;
     opcode += mem.indices[(pc.val + 1) as usize] as u16;
     opcode
@@ -103,7 +104,7 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
             )
         }
 
-        (0x5, _, _, 0) => {
+        (0x5, _, _, 0x0) => {
             assert!(nib2 <= 0xF);
             assert!(nib3 <= 0xF); //nib 2 and 3 contain register numbers. There are only 16 registers
 
@@ -128,7 +129,7 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
             )
         }
 
-        (0x8, _, _, 0) => {
+        (0x8, _, _, 0x0) => {
             assert!(nib2 <= 0xF);
             assert!(nib3 <= 0xF);
 
@@ -136,6 +137,110 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
                 sys.registers[nib3 as usize],
                 &mut sys.registers[nib2 as usize],
             )
+        }
+
+        (0x8, _, _, 0x1) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            crate::opcode::or(
+                sys.registers[nib3 as usize],
+                &mut sys.registers[nib2 as usize],
+            )
+        }
+
+        (0x8, _, _, 0x2) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            crate::opcode::and(
+                sys.registers[nib3 as usize],
+                &mut sys.registers[nib2 as usize],
+            )
+        }
+
+        (0x8, _, _, 0x3) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            crate::opcode::xor(
+                sys.registers[nib3 as usize],
+                &mut sys.registers[nib2 as usize],
+            )
+        }
+
+        (0x8, _, _, 0x4) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            // Split the register array in two. Second array contains only the last element.
+            // This is neccesarry to avoid rust borrowchecker rules preventing two mutable
+            // references to a single array.
+            let array_segments = sys.registers.split_at_mut(0xF);
+
+            let arg1 = array_segments.0[nib3 as usize]; //Y
+            let arg2 = &mut array_segments.0[nib2 as usize]; //X
+            let arg3 = &mut array_segments.1[0]; //VF
+
+            crate::opcode::add_two_regs(arg1, arg2, arg3)
+        }
+
+        (0x8, _, _, 0x5) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            // Split the register array in two. Second array contains only the last element.
+            // This is neccesarry to avoid rust borrowchecker rules preventing two mutable
+            // references to a single array.
+            let array_segments = sys.registers.split_at_mut(0xF);
+
+            let arg1 = array_segments.0[nib3 as usize]; //Y
+            let arg2 = &mut array_segments.0[nib2 as usize]; //X
+            let arg3 = &mut array_segments.1[0]; //VF
+
+            crate::opcode::sub_two_regs(arg1, arg2, arg3)
+        }
+
+        (0x8, _, _, 0x6) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            // Split the register array in two. Second array contains only the last element.
+            // This is neccesarry to avoid rust borrowchecker rules preventing two mutable
+            // references to a single array.
+            let array_segments = sys.registers.split_at_mut(0xF);
+
+            let arg1 = &mut array_segments.0[nib2 as usize]; //X
+            let arg2 = &mut array_segments.1[0]; //VF
+
+            crate::opcode::shr(arg1, arg2)
+        }
+
+        (0x8, _, _, 0x7) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+
+            // Split the register array in two. Second array contains only the last element.
+            // This is neccesarry to avoid rust borrowchecker rules preventing two mutable
+            // references to a single array.
+            let array_segments = sys.registers.split_at_mut(0xF);
+
+            let arg1 = array_segments.0[nib3 as usize]; //Y
+            let arg2 = &mut array_segments.0[nib2 as usize]; //X
+            let arg3 = &mut array_segments.1[0]; //VF
+
+            crate::opcode::subn(arg1, arg2, arg3)
+        }
+
+        (0x8, _, _, 0xE) => {
+            assert!(nib2 <= 0xF);
+
+            let array_segments = sys.registers.split_at_mut(0xF);
+
+            let arg1 = &mut array_segments.0[nib2 as usize]; //X
+            let arg2 = &mut array_segments.1[0]; //VF
+
+            crate::opcode::shl(arg1, arg2)
         }
 
         (_, _, _, _) => panic!("Undefined opcode encountered: {:X}", opcode), //Print the opcode in hex
@@ -149,6 +254,7 @@ fn opcode_in_u16_to_nibbles(opcode: u16) -> (u8, u8, u8, u8) {
     let third_nibble = ((opcode >> 4) % 0xFF) as u8;
     let fourth_nibble = ((opcode) % 0xFFF) as u8;
 
+    //no nibble datatype in rust. Using asserts to ensure they are only used as nibbles.
     assert!(first_nibble <= FOUR_BITS as u8);
     assert!(second_nibble <= FOUR_BITS as u8);
     assert!(third_nibble <= FOUR_BITS as u8);
@@ -157,6 +263,7 @@ fn opcode_in_u16_to_nibbles(opcode: u16) -> (u8, u8, u8, u8) {
     (first_nibble, second_nibble, third_nibble, fourth_nibble)
 }
 
+//Return type of all opcodes
 pub enum ProgramCounterPolicy {
     NoIncrement,
     StandardIncrement,
@@ -440,8 +547,8 @@ mod opcode {
     // bitwise or on two registers
     // OPCODE: 8XY1
     pub fn or(
-        reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
+        reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         reg1.val = reg1.val | reg2.val;
 
@@ -451,8 +558,8 @@ mod opcode {
     // bitwise and on two registers
     // OPCODE: 8XY2
     pub fn and(
-        reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
+        reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         reg1.val = reg1.val & reg2.val;
 
@@ -462,8 +569,8 @@ mod opcode {
     // bitwise xor on two registers
     // OPCODE: 8XY3
     pub fn xor(
-        reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
+        reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         reg1.val = reg1.val ^ reg2.val;
 
@@ -472,8 +579,8 @@ mod opcode {
 
     // OPCODE: 8XY4
     pub fn add_two_regs(
-        reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
+        reg1: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         //Differs from add() by the args and uses overflow detection
@@ -488,8 +595,8 @@ mod opcode {
 
     // OPCODE: 8XY5
     pub fn sub_two_regs(
-        reg1: &mut crate::hardware::Register,
         reg2: crate::hardware::Register,
+        reg1: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         if reg1.val > reg2.val {
@@ -504,7 +611,7 @@ mod opcode {
     }
 
     //shift register
-    // OPCODE: 9XY6
+    // OPCODE: 8XY6
     pub fn shr(
         reg: &mut crate::hardware::Register,
         truncate_register: &mut crate::hardware::Register,
@@ -518,9 +625,9 @@ mod opcode {
 
     // Reversed operands order compared to sub()
     // OPCODE: 8XY7
-    fn subn(
+    pub fn subn(
+        reg2: crate::hardware::Register,
         reg1: &mut crate::hardware::Register,
-        reg2: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         if reg2.val > reg1.val {
@@ -537,7 +644,7 @@ mod opcode {
     // shift left.
     // Might result in bits "falling off" the edge
     //  OPCODE: 8XYE
-    fn shl(
+    pub fn shl(
         reg: &mut crate::hardware::Register,
         overflow_flag: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
@@ -550,7 +657,7 @@ mod opcode {
 
     // Load a constant into the IRegister
     // OPCODE: ANNN
-    fn ld_into_i(i_reg: &mut crate::hardware::IRegister, input: u16) -> ProgramCounterPolicy {
+    pub fn ld_into_i(i_reg: &mut crate::hardware::IRegister, input: u16) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS);
         i_reg.val = input;
 
@@ -559,7 +666,7 @@ mod opcode {
 
     // jumps to Register 0's value + offset
     // OPCODE: BNN
-    fn jump_off_set(
+    pub fn jump_off_set(
         reg_zero: crate::hardware::Register,
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
@@ -572,7 +679,7 @@ mod opcode {
 
     // random number generator. Binary AND against an input.
     // OPCODE: CXKK
-    fn rnd<T: RngCore>(
+    pub fn rnd<T: RngCore>(
         dest_reg: &mut crate::hardware::Register,
         input: u8,
         rng: &mut T,
@@ -584,7 +691,7 @@ mod opcode {
     }
 
     // OPCODE: DXYN
-    fn draw(
+    pub fn draw(
         dis: &mut crate::hardware::Display,
         mem: crate::hardware::Memory,
         reg_x: crate::hardware::Register,
@@ -620,7 +727,7 @@ mod opcode {
     }
 
     // OPCODE: EX9E
-    fn skip_if_key_pressed(
+    pub fn skip_if_key_pressed(
         reg: crate::hardware::Register,
         keys: crate::hardware::Keys,
     ) -> ProgramCounterPolicy {
@@ -632,7 +739,7 @@ mod opcode {
     }
 
     // OPCODE: EXA1
-    fn skip_if_key_not_pressed(
+    pub fn skip_if_key_not_pressed(
         reg: crate::hardware::Register,
         keys: crate::hardware::Keys,
     ) -> ProgramCounterPolicy {
@@ -645,7 +752,7 @@ mod opcode {
 
     //save the delay timer value into a register
     //opcode: FX15
-    fn save_delay_timer_value(
+    pub fn save_delay_timer_value(
         timer: crate::hardware::DelayTimer,
         reg: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
@@ -657,7 +764,7 @@ mod opcode {
     //stop execution until a key is pressed and record the key that was pressed.
     //opcode: FX0A
 
-    fn suspend_program_and_store_next_keypress() -> ProgramCounterPolicy {
+    pub fn suspend_program_and_store_next_keypress() -> ProgramCounterPolicy {
         //TODO
 
         ProgramCounterPolicy::StandardIncrement
@@ -665,7 +772,7 @@ mod opcode {
 
     //Set the value of the delay timer
     //opcode FX15
-    fn set_delay_timer(
+    pub fn set_delay_timer(
         timer: &mut crate::hardware::DelayTimer,
         reg: crate::hardware::Register,
     ) -> ProgramCounterPolicy {
@@ -674,9 +781,9 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
-    //add a value to the i_reg from another register
+    //aubd a value to the i_reg from another register
     //opcode: FX1E
-    fn add_i_reg(
+    pub fn add_i_reg(
         i_reg: &mut crate::hardware::IRegister,
         reg: crate::hardware::Register,
     ) -> ProgramCounterPolicy {
@@ -688,7 +795,7 @@ mod opcode {
     // set the I register to the memory address containing the sprite representing the numeral
     // stored in the register.
     // opcode: FX29
-    fn load_hardcoded_sprite(
+    pub fn load_hardcoded_sprite(
         i_reg: &mut crate::hardware::IRegister,
         digit: crate::hardware::Register,
     ) -> ProgramCounterPolicy {
@@ -702,7 +809,7 @@ mod opcode {
     //sequentially
     //example: 1111 1111 = 255. Saves in three sequential memory addresses '2' '5' '5'
     //opcode: FX33
-    fn save_decimal_value_to_memory(
+    pub fn save_decimal_value_to_memory(
         i_reg: crate::hardware::IRegister,
         reg: crate::hardware::Register,
         mem: &mut crate::hardware::Memory,
@@ -723,7 +830,7 @@ mod opcode {
 
     //Store the first N registers to memory sequentially, where N is the value of the input
     //register.
-    fn store_first_n_registers_in_memory(
+    pub fn store_first_n_registers_in_memory(
         reg_array: [crate::hardware::Register; NUM_REGISTERS],
         i_reg: crate::hardware::IRegister,
         mem: &mut crate::hardware::Memory,
@@ -740,7 +847,7 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
-    fn retrieve_first_n_registers_from_memory(
+    pub fn retrieve_first_n_registers_from_memory(
         mem: crate::hardware::Memory,
         reg_array: &mut [crate::hardware::Register; NUM_REGISTERS],
         i_reg: crate::hardware::IRegister,
