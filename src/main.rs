@@ -243,6 +243,19 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
             crate::opcode::shl(arg1, arg2)
         }
 
+        (0xA, _, _, _) => {
+            let constant: u16 = nibbles_array_to_u16(&[nib2, nib3, nib4]);
+            assert!(constant <= TWELVE_BITS);
+
+            crate::opcode::ld_into_i(&mut sys.ireg, constant)
+        }
+
+        (0xB, _, _, _) => {
+            let offset: u16 = nibbles_array_to_u16(&[nib2, nib3, nib4]);
+
+            crate::opcode::jump_offset(sys.registers[0], offset, &mut sys.pc)
+        }
+
         (_, _, _, _) => panic!("Undefined opcode encountered: {:X}", opcode), //Print the opcode in hex
     }
 }
@@ -261,6 +274,25 @@ fn opcode_in_u16_to_nibbles(opcode: u16) -> (u8, u8, u8, u8) {
     assert!(fourth_nibble <= FOUR_BITS as u8);
 
     (first_nibble, second_nibble, third_nibble, fourth_nibble)
+}
+
+//combine an array of nibbles into a single u16
+fn nibbles_array_to_u16(nibbles: &[u8]) -> u16 {
+    assert!(nibbles.len() <= 4); // More than 4 won't fit in a u16.
+    let mut returner: u16 = 0;
+
+    //Note for loops in rust are exclusive on the second value.
+    for i in 0..(nibbles.len() - 1) {
+        //-1 so the last element is done outside of the for loop. Last shouldn't be shifted!
+        assert!(nibbles[i] <= FOUR_BITS as u8); //ie is a nibble
+
+        returner += nibbles[i] as u16;
+        returner = returner << 4;
+    }
+
+    returner += nibbles[(nibbles.len() - 1) as usize] as u16; //the one ignored by for loop.
+
+    returner
 }
 
 //Return type of all opcodes
@@ -665,8 +697,8 @@ mod opcode {
     }
 
     // jumps to Register 0's value + offset
-    // OPCODE: BNN
-    pub fn jump_off_set(
+    // OPCODE: BNNN
+    pub fn jump_offset(
         reg_zero: crate::hardware::Register,
         input: u16,
         program_counter: &mut crate::hardware::ProgramCounter,
