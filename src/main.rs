@@ -256,6 +256,15 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
             crate::opcode::jump_offset(sys.registers[0], offset, &mut sys.pc)
         }
 
+        (0xC, _, _, _) => {
+            //Combine the last 2 nibbles into a u8 by successive shifts and adds
+            let mut constant: u8 = nib3;
+            constant = constant << 4;
+            constant += nib4;
+
+            ProgramCounterPolicy::NoIncrement //TODO MAKE THIS CALL THE RNG OPCODE
+        }
+
         (_, _, _, _) => panic!("Undefined opcode encountered: {:X}", opcode), //Print the opcode in hex
     }
 }
