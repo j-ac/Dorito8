@@ -257,12 +257,102 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
         }
 
         (0xC, _, _, _) => {
+            assert!(nib2 <= 0xF);
             //Combine the last 2 nibbles into a u8 by successive shifts and adds
             let mut constant: u8 = nib3;
             constant = constant << 4;
             constant += nib4;
 
-            ProgramCounterPolicy::NoIncrement //TODO MAKE THIS CALL THE RNG OPCODE
+            crate::opcode::rnd(&mut sys.registers[nib2 as usize], constant, &mut sys.rng)
+        }
+
+        (0xD, _, _, _) => {
+            assert!(nib2 <= 0xF);
+            assert!(nib3 <= 0xF);
+            assert!(nib4 <= FOUR_BITS as u8); //ie is a nibble
+
+            crate::opcode::draw(
+                &mut sys.disp,
+                &sys.mem,
+                sys.registers[nib2 as usize],
+                sys.registers[nib3 as usize],
+                nib4,
+                &mut sys.ireg,
+                &mut sys.registers[0xF],
+            )
+        }
+
+        (0xE, _, 0x9, 0xE) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::skip_if_key_pressed(sys.registers[nib2 as usize], &sys.keyboard)
+        }
+
+        (0xE, _, 0xA, 0x1) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::skip_if_key_not_pressed(sys.registers[nib2 as usize], &sys.keyboard)
+        }
+
+        (0xF, _, 0x0, 0x7) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::save_delay_timer_value(&sys.delay, &mut sys.registers[nib2 as usize])
+        }
+
+        //TODO
+        (0xF, _, 0x0, 0xA) => {
+            ProgramCounterPolicy::NoIncrement //PLACEHOLDER. REPLACE WITH FUNCTION CALL TO suspend_program_and_store_next_keypress
+        }
+
+        (0xF, _, 0x1, 0x5) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::set_delay_timer(&mut sys.delay, sys.registers[nib2 as usize])
+        }
+
+        (0xF, _, 0x1, 0xE) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::add_i_reg(&mut sys.ireg, sys.registers[nib2 as usize])
+        }
+
+        (0xF, _, 0x2, 0x9) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::load_hardcoded_sprite(&mut sys.ireg, sys.registers[nib2 as usize])
+        }
+
+        (0xF, _, 0x3, 0x3) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::save_decimal_value_to_memory(
+                &sys.ireg,
+                sys.registers[nib2 as usize],
+                &mut sys.mem,
+            )
+        }
+
+        (0xF, _, 0x5, 0x5) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::store_first_n_registers_in_memory(
+                sys.registers,
+                &sys.ireg,
+                &mut sys.mem,
+                nib2,
+            )
+        }
+
+        (0xF, _, 0x6, 0x5) => {
+            assert!(nib2 <= 0xF);
+
+            crate::opcode::retrieve_first_n_registers_from_memory(
+                &sys.mem,
+                &mut sys.registers,
+                &sys.ireg,
+                nib2,
+            )
         }
 
         (_, _, _, _) => panic!("Undefined opcode encountered: {:X}", opcode), //Print the opcode in hex
@@ -317,6 +407,7 @@ mod hardware {
     use crate::MEM_SIZE;
     use crate::NUM_REGISTERS;
     use crate::PROGRAM_START_POINT;
+    use rand::prelude::*;
     use std::fs::File;
     use std::io::prelude::*;
     use std::ops::Deref;
@@ -414,6 +505,7 @@ mod hardware {
         pub disp: Display,
         pub sound: SoundTimer,
         pub delay: DelayTimer,
+        pub rng: rand::rngs::StdRng,
     }
     impl System {
         pub fn new(rom: PathBuf) -> Self {
@@ -439,6 +531,7 @@ mod hardware {
 
                 sound: SoundTimer { time: 0 },
                 delay: DelayTimer { time: 0 },
+                rng: rand::rngs::StdRng::from_entropy(),
             }
         }
     }
@@ -734,7 +827,7 @@ mod opcode {
     // OPCODE: DXYN
     pub fn draw(
         dis: &mut crate::hardware::Display,
-        mem: crate::hardware::Memory,
+        mem: &crate::hardware::Memory,
         reg_x: crate::hardware::Register,
         reg_y: crate::hardware::Register,
         nibble: u8,
@@ -770,7 +863,7 @@ mod opcode {
     // OPCODE: EX9E
     pub fn skip_if_key_pressed(
         reg: crate::hardware::Register,
-        keys: crate::hardware::Keys,
+        keys: &crate::hardware::Keys,
     ) -> ProgramCounterPolicy {
         if keys.key[reg.val as usize] {
             ProgramCounterPolicy::DoubleIncrement
@@ -782,7 +875,7 @@ mod opcode {
     // OPCODE: EXA1
     pub fn skip_if_key_not_pressed(
         reg: crate::hardware::Register,
-        keys: crate::hardware::Keys,
+        keys: &crate::hardware::Keys,
     ) -> ProgramCounterPolicy {
         if !keys.key[reg.val as usize] {
             ProgramCounterPolicy::DoubleIncrement
@@ -792,9 +885,9 @@ mod opcode {
     }
 
     //save the delay timer value into a register
-    //opcode: FX15
+    //opcode: FX07
     pub fn save_delay_timer_value(
-        timer: crate::hardware::DelayTimer,
+        timer: &crate::hardware::DelayTimer,
         reg: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
         reg.val = timer.time;
@@ -851,7 +944,7 @@ mod opcode {
     //example: 1111 1111 = 255. Saves in three sequential memory addresses '2' '5' '5'
     //opcode: FX33
     pub fn save_decimal_value_to_memory(
-        i_reg: crate::hardware::IRegister,
+        i_reg: &crate::hardware::IRegister,
         reg: crate::hardware::Register,
         mem: &mut crate::hardware::Memory,
     ) -> ProgramCounterPolicy {
@@ -869,18 +962,19 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
-    //Store the first N registers to memory sequentially, where N is the value of the input
-    //register.
+    // Store the first N registers to memory sequentially, where N is the value of the input
+    // register.
+    // OPCODE: FX55
     pub fn store_first_n_registers_in_memory(
         reg_array: [crate::hardware::Register; NUM_REGISTERS],
-        i_reg: crate::hardware::IRegister,
+        i_reg: &crate::hardware::IRegister,
         mem: &mut crate::hardware::Memory,
-        reg: crate::hardware::Register, //contains the number of registers to store
+        num_to_store: u8, //Rather than passing in the register which the borrowchecker will not like in combination with reg_array!
     ) -> ProgramCounterPolicy {
-        assert!(i_reg.val + (reg.val - 1) as u16 <= MEM_SIZE as u16); //enough space to store the data
-        assert!(reg.val <= NUM_REGISTERS as u8); //Spec does not define what would occur in this scenario.
+        assert!(i_reg.val + (num_to_store) as u16 <= MEM_SIZE as u16); //enough space to store the data
+        assert!(num_to_store <= NUM_REGISTERS as u8); //Spec does not define what would occur in this scenario.
 
-        for register_number in 0..reg.val {
+        for register_number in 0..num_to_store {
             mem.indices[(i_reg.val + register_number as u16) as usize] =
                 reg_array[register_number as usize].val;
         }
@@ -888,16 +982,18 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
+    // OPCODE: FX65
+    // Retrieve from memory and save them in registers
     pub fn retrieve_first_n_registers_from_memory(
-        mem: crate::hardware::Memory,
+        mem: &crate::hardware::Memory,
         reg_array: &mut [crate::hardware::Register; NUM_REGISTERS],
-        i_reg: crate::hardware::IRegister,
-        reg: crate::hardware::Register, //number of registers to read
+        i_reg: &crate::hardware::IRegister,
+        num_regs: u8, //Comes from a register but to avoid annoying the borrowchecker we do this
     ) -> ProgramCounterPolicy {
-        assert!(i_reg.val + ((reg.val - 1) as u16) <= MEM_SIZE as u16);
-        assert!(reg.val <= NUM_REGISTERS as u8);
+        assert!(i_reg.val + ((num_regs) as u16) <= MEM_SIZE as u16);
+        assert!(num_regs <= NUM_REGISTERS as u8);
 
-        for register_number in 0..reg.val {
+        for register_number in 0..num_regs {
             reg_array[register_number as usize].val =
                 mem.indices[(i_reg.val + register_number as u16) as usize];
         }
