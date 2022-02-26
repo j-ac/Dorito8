@@ -2,6 +2,7 @@
 use std::io::Read;
 use std::io::Seek;
 use std::path::PathBuf;
+use std::time::*;
 use structopt::StructOpt;
 
 const TWELVE_BITS: u16 = 0xFFF;
@@ -44,6 +45,10 @@ struct Opt {
 
     #[structopt(short, long)]
     verbose: bool,
+
+    /// The frequency instructions are executed at
+    #[structopt(short, long)]
+    frequency: f64,
 }
 
 fn main() {
@@ -54,11 +59,12 @@ fn main() {
 
     let sys = hardware::System::new(opt.file);
 
-    run_game(sys);
+    run_game(sys, opt.frequency);
 }
 
-fn run_game(mut sys: crate::hardware::System) {
+fn run_game(mut sys: crate::hardware::System, frequency: f64) {
     loop {
+        sync(frequency);
         let opcode: u16 = fetch(&mut sys.pc, &sys.mem);
         let pc_increment = execute(opcode, &mut sys);
 
@@ -68,6 +74,19 @@ fn run_game(mut sys: crate::hardware::System) {
             ProgramCounterPolicy::DoubleIncrement => 4,
         };
     }
+}
+
+// Waits a specified duration so the game runs at a given frequency.
+// Assumes the rest of the program has negligible execution time
+// If game runs clunky may need to be changed to wait for precise deadlines
+fn sync(frequency: f64) {
+    assert!(frequency > 2 as f64);
+
+    std::thread::sleep(Duration::new(
+        0,
+        ((1.0 / frequency) * 1_000_000_000 as f64) as u32,
+    ));
+    //One billion nanoseconds per second
 }
 
 fn fetch(pc: &mut hardware::ProgramCounter, mem: &hardware::Memory) -> u16 {
