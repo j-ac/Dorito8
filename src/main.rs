@@ -46,15 +46,21 @@ struct Opt {
     #[structopt(short, long)]
     verbose: bool,
 
-    /// The frequency instructions are executed at
+    /// The frequency instructions are executed at. Will be rounded to nearest 60Hz
     #[structopt(short, long)]
     frequency: f64,
 }
 
 fn main() {
-    let opt = Opt::from_args();
+    let mut opt = Opt::from_args();
     if opt.verbose {
         println!("input params: {:?}", opt);
+    }
+
+    opt.frequency = (((opt.frequency / 60.0).round()) * 60.0).max(60.0); //round to nearest multiple of 60 to aminimum of 60
+
+    if opt.verbose {
+        println!("Frequency rounded to: {:?}", opt.frequency)
     }
 
     let sys = hardware::System::new(opt.file);
@@ -63,8 +69,14 @@ fn main() {
 }
 
 fn run_game(mut sys: crate::hardware::System, frequency: f64) {
+    let mut cycles_until_timer_decrement = 0;
     loop {
-        sync(frequency);
+        cycles_until_timer_decrement = sync(
+            frequency,
+            &mut sys.delay,
+            &mut sys.sound,
+            cycles_until_timer_decrement,
+        );
         let opcode: u16 = fetch(&mut sys.pc, &sys.mem);
         let pc_increment = execute(opcode, &mut sys);
 
@@ -79,14 +91,27 @@ fn run_game(mut sys: crate::hardware::System, frequency: f64) {
 // Waits a specified duration so the game runs at a given frequency.
 // Assumes the rest of the program has negligible execution time
 // If game runs clunky may need to be changed to wait for precise deadlines
-fn sync(frequency: f64) {
-    assert!(frequency > 2 as f64);
+// returns the number of cycles before timers must be decremented
+fn sync(
+    frequency: f64,
+    delay_timer: &mut crate::hardware::DelayTimer,
+    sound_timer: &mut crate::hardware::SoundTimer,
+    mut cycles_until_timer_decrement: u16,
+) -> u16 {
+    assert!(frequency % 60.0 == 0.0); //is a multiple of 60
 
-    std::thread::sleep(Duration::new(
-        0,
-        ((1.0 / frequency) * 1_000_000_000 as f64) as u32,
-    ));
-    //One billion nanoseconds per second
+    std::thread::sleep(Duration::new(1, 0).div_f64(frequency)); //sleep for 1/frequency seconds
+
+    //example: if frequency is 600hz, then every 600/60 = 10 cycles the timers decrement.
+    if cycles_until_timer_decrement == 0 {
+        delay_timer.time = delay_timer.time.saturating_sub(1);
+        sound_timer.time = sound_timer.time.saturating_sub(1);
+        cycles_until_timer_decrement = (frequency / 60.0) as u16;
+    } else {
+        cycles_until_timer_decrement = cycles_until_timer_decrement - 1;
+    }
+
+    cycles_until_timer_decrement
 }
 
 fn fetch(pc: &mut hardware::ProgramCounter, mem: &hardware::Memory) -> u16 {
