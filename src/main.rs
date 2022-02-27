@@ -91,7 +91,7 @@ fn run_game(mut sys: crate::hardware::System, frequency: f64) {
 // Waits a specified duration so the game runs at a given frequency.
 // Assumes the rest of the program has negligible execution time
 // If game runs clunky may need to be changed to wait for precise deadlines
-// returns the number of cycles before timers must be decremented
+// returns the number of cycles before hardware timers must be decremented
 fn sync(
     frequency: f64,
     delay_timer: &mut crate::hardware::DelayTimer,
