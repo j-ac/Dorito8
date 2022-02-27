@@ -2,7 +2,6 @@
 use std::io::Read;
 use std::io::Seek;
 use std::path::PathBuf;
-use std::time::*;
 use structopt::StructOpt;
 
 const TWELVE_BITS: u16 = 0xFFF;
@@ -48,7 +47,7 @@ struct Opt {
 
     /// The frequency instructions are executed at. Will be rounded to nearest 60Hz
     #[structopt(short, long)]
-    frequency: f64,
+    frequency: u32,
 }
 
 fn main() {
@@ -57,26 +56,20 @@ fn main() {
         println!("input params: {:?}", opt);
     }
 
-    opt.frequency = (((opt.frequency / 60.0).round()) * 60.0).max(60.0); //round to nearest multiple of 60 to aminimum of 60
+    opt.frequency = (((opt.frequency as f64 / 60.0).round()) as u32 * 60).max(60); //round to nearest multiple of 60 to aminimum of 60
 
     if opt.verbose {
         println!("Frequency rounded to: {:?}", opt.frequency)
     }
 
-    let sys = hardware::System::new(opt.file);
+    let sys = hardware::System::new(opt.file, opt.frequency);
 
-    run_game(sys, opt.frequency);
+    run_game(sys);
 }
 
-fn run_game(mut sys: crate::hardware::System, frequency: f64) {
-    let mut cycles_until_timers_decrement = 0;
+fn run_game(mut sys: crate::hardware::System) {
     loop {
-        cycles_until_timers_decrement = sync(
-            frequency,
-            &mut sys.delay,
-            &mut sys.sound,
-            cycles_until_timers_decrement,
-        );
+        sys.sync(); //Waits 1/frequency seconds and handles timers
         let opcode: u16 = fetch(&mut sys.pc, &sys.mem);
         let pc_increment = execute(opcode, &mut sys);
 
@@ -86,32 +79,6 @@ fn run_game(mut sys: crate::hardware::System, frequency: f64) {
             ProgramCounterPolicy::DoubleIncrement => 4,
         };
     }
-}
-
-// Waits a specified duration so the game runs at a given frequency.
-// Assumes the rest of the program has negligible execution time
-// If game runs clunky may need to be changed to wait for precise deadlines
-// returns the number of cycles before hardware timers must be decremented
-fn sync(
-    frequency: f64,
-    delay_timer: &mut crate::hardware::DelayTimer,
-    sound_timer: &mut crate::hardware::SoundTimer,
-    mut cycles_until_timers_decrement: u16,
-) -> u16 {
-    assert!(frequency % 60.0 == 0.0); //is a multiple of 60
-
-    std::thread::sleep(Duration::new(1, 0).div_f64(frequency)); //sleep for 1/frequency seconds
-
-    //example: if frequency is 600hz, then every 600/60 = 10 cycles the timers decrement.
-    if cycles_until_timers_decrement == 0 {
-        delay_timer.time = delay_timer.time.saturating_sub(1);
-        sound_timer.time = sound_timer.time.saturating_sub(1);
-        cycles_until_timers_decrement = (frequency / 60.0) as u16; //reset the timers
-    } else {
-        cycles_until_timers_decrement = cycles_until_timers_decrement - 1;
-    }
-
-    cycles_until_timers_decrement
 }
 
 fn fetch(pc: &mut hardware::ProgramCounter, mem: &hardware::Memory) -> u16 {
@@ -456,6 +423,7 @@ mod hardware {
     use std::io::prelude::*;
     use std::ops::Deref;
     use std::path::PathBuf;
+    use std::time::*;
 
     #[derive(Default, Copy, Clone)]
     pub struct Register {
@@ -539,6 +507,12 @@ mod hardware {
         }
     }
 
+    pub struct SyncData {
+        pub num_cycles_until_timers_decrement: u16,
+        pub frequency: u32,
+        pub frequency_inverse: f64, //Unnecesarry?
+    }
+
     pub struct System {
         pub registers: [Register; 16],
         pub mem: Memory,
@@ -550,9 +524,10 @@ mod hardware {
         pub sound: SoundTimer,
         pub delay: DelayTimer,
         pub rng: rand::rngs::StdRng,
+        pub sync_data: SyncData,
     }
     impl System {
-        pub fn new(rom: PathBuf) -> Self {
+        pub fn new(rom: PathBuf, frequency: u32) -> Self {
             let mut mem = Memory {
                 indices: [0; MEM_SIZE],
             };
@@ -576,6 +551,31 @@ mod hardware {
                 sound: SoundTimer { time: 0 },
                 delay: DelayTimer { time: 0 },
                 rng: rand::rngs::StdRng::from_entropy(),
+                sync_data: SyncData {
+                    num_cycles_until_timers_decrement: 0,
+                    frequency: frequency,
+                    frequency_inverse: frequency as f64 / 60.0,
+                },
+            }
+        }
+
+        // Waits a specified duration so the game runs at a given frequency.
+        // Assumes the rest of the program has negligible execution time
+        // If game runs clunky may need to be changed to wait for precise deadlines
+        pub fn sync(&mut self) {
+            assert!(self.sync_data.frequency % 60 == 0); //is a multiple of 60
+
+            std::thread::sleep(Duration::new(1, 0) / self.sync_data.frequency as u32); // sleep for 1/frequency seconds
+
+            //example: if frequency is 600Hz, then every 600/60 = 10 cycles the timers decrement
+            if self.sync_data.num_cycles_until_timers_decrement == 0 {
+                self.delay.time = self.delay.time.saturating_sub(1);
+                self.sound.time = self.sound.time.saturating_sub(1);
+                self.sync_data.num_cycles_until_timers_decrement =
+                    (self.sync_data.frequency / 60) as u16
+            } else {
+                self.sync_data.num_cycles_until_timers_decrement =
+                    self.sync_data.num_cycles_until_timers_decrement - 1;
             }
         }
     }
