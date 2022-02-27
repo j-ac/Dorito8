@@ -69,13 +69,13 @@ fn main() {
 }
 
 fn run_game(mut sys: crate::hardware::System, frequency: f64) {
-    let mut cycles_until_timer_decrement = 0;
+    let mut cycles_until_timers_decrement = 0;
     loop {
-        cycles_until_timer_decrement = sync(
+        cycles_until_timers_decrement = sync(
             frequency,
             &mut sys.delay,
             &mut sys.sound,
-            cycles_until_timer_decrement,
+            cycles_until_timers_decrement,
         );
         let opcode: u16 = fetch(&mut sys.pc, &sys.mem);
         let pc_increment = execute(opcode, &mut sys);
@@ -96,22 +96,22 @@ fn sync(
     frequency: f64,
     delay_timer: &mut crate::hardware::DelayTimer,
     sound_timer: &mut crate::hardware::SoundTimer,
-    mut cycles_until_timer_decrement: u16,
+    mut cycles_until_timers_decrement: u16,
 ) -> u16 {
     assert!(frequency % 60.0 == 0.0); //is a multiple of 60
 
     std::thread::sleep(Duration::new(1, 0).div_f64(frequency)); //sleep for 1/frequency seconds
 
     //example: if frequency is 600hz, then every 600/60 = 10 cycles the timers decrement.
-    if cycles_until_timer_decrement == 0 {
+    if cycles_until_timers_decrement == 0 {
         delay_timer.time = delay_timer.time.saturating_sub(1);
         sound_timer.time = sound_timer.time.saturating_sub(1);
-        cycles_until_timer_decrement = (frequency / 60.0) as u16;
+        cycles_until_timers_decrement = (frequency / 60.0) as u16; //reset the timers
     } else {
-        cycles_until_timer_decrement = cycles_until_timer_decrement - 1;
+        cycles_until_timers_decrement = cycles_until_timers_decrement - 1;
     }
 
-    cycles_until_timer_decrement
+    cycles_until_timers_decrement
 }
 
 fn fetch(pc: &mut hardware::ProgramCounter, mem: &hardware::Memory) -> u16 {
