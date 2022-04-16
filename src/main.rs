@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-use std::io::Read;
-use std::io::Seek;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -271,7 +269,7 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
             assert!(nib2 <= 0xF);
             //Combine the last 2 nibbles into a u8 by successive shifts and adds
             let mut constant: u8 = nib3;
-            constant = constant << 4;
+            constant <<= 4;
             constant += nib4;
 
             crate::opcode::rnd(&mut sys.registers[nib2 as usize], constant, &mut sys.rng)
@@ -392,12 +390,12 @@ fn nibbles_array_to_u16(nibbles: &[u8]) -> u16 {
     let mut returner: u16 = 0;
 
     //Note for loops in rust are exclusive on the second value.
-    for i in 0..(nibbles.len() - 1) {
+    for nibble in nibbles.iter() {
         //-1 so the last element is done outside of the for loop. Last shouldn't be shifted!
-        assert!(nibbles[i] <= FOUR_BITS as u8); //ie is a nibble
+        assert!(nibble <= &(FOUR_BITS as u8)); //ie is a nibble
 
-        returner += nibbles[i] as u16;
-        returner = returner << 4;
+        returner += *nibble as u16;
+        returner <<= 4;
     }
 
     returner += nibbles[(nibbles.len() - 1) as usize] as u16; //the one ignored by for loop.
@@ -462,9 +460,7 @@ mod hardware {
 
     impl Memory {
         fn load_in_hardcoded_sprites(&mut self) {
-            for i in 0..FONT.len() {
-                self.indices[i] = FONT[i];
-            }
+            self.indices[0..FONT.len()].copy_from_slice(&FONT);
         }
 
         fn load_rom(&mut self, rom: PathBuf) {
@@ -598,7 +594,7 @@ mod opcode {
     // OPCODE: 0NNN
     pub fn sys() -> u16 {
         //TODO
-        return 0;
+        0
     }
 
     // Clear the display
@@ -728,7 +724,7 @@ mod opcode {
         reg2: crate::hardware::Register,
         reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
-        reg1.val = reg1.val | reg2.val;
+        reg1.val |= reg2.val;
 
         ProgramCounterPolicy::StandardIncrement
     }
@@ -739,7 +735,7 @@ mod opcode {
         reg2: crate::hardware::Register,
         reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
-        reg1.val = reg1.val & reg2.val;
+        reg1.val &= reg2.val;
 
         ProgramCounterPolicy::StandardIncrement
     }
@@ -750,7 +746,7 @@ mod opcode {
         reg2: crate::hardware::Register,
         reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
-        reg1.val = reg1.val ^ reg2.val;
+        reg1.val ^= reg2.val;
 
         ProgramCounterPolicy::StandardIncrement
     }
@@ -890,14 +886,12 @@ mod opcode {
                 let x_coordinate: usize = ((reg_x.val + x) % SCREEN_WIDTH) as usize;
                 let y_coordinate: usize = ((reg_y.val + y) % SCREEN_HEIGHT) as usize;
 
-                if (dis.data[x_coordinate][y_coordinate] == true) //ie if the xor will delete a pixel
-                    && (byte_as_bool_array[x as usize] == true)
-                {
+                //if the display has a pixel here. (ie a lit pixel is on screen AND in the sprite)
+                if (dis.data[x_coordinate][y_coordinate]) && (byte_as_bool_array[x as usize]) {
                     collision_detect_register.val = 1;
                 }
 
-                dis.data[x_coordinate][y_coordinate] =
-                    dis.data[x_coordinate][y_coordinate] ^ byte_as_bool_array[x as usize];
+                dis.data[x_coordinate][y_coordinate] ^= byte_as_bool_array[x as usize];
                 //insert the sprite by XORing
             }
         }
@@ -971,7 +965,7 @@ mod opcode {
     }
 
     // set the I register to the memory address containing the sprite representing the numeral
-    // stored in the register.
+    // stored in the register. Doesn't actally load anything yet.
     // opcode: FX29
     pub fn load_hardcoded_sprite(
         i_reg: &mut crate::hardware::IRegister,
@@ -1049,11 +1043,38 @@ mod opcode {
 fn convert_u8_to_boolarr(byte: u8) -> [bool; 8] {
     let mut boolarr: [bool; 8] = [false; 8];
 
-    for i in 0..8 {
-        let mut byte = byte;
-        byte = byte >> i;
-        boolarr[i] = (byte >> i) == 0b1;
+    for (i, data) in boolarr.iter_mut().enumerate() {
+        *data = byte & (0b1000_0000 >> i) != 0;
     }
 
+    /*
+        for i in 0..8 {
+            boolarr[i] = byte & (0b1000_0000 >> i) != 0;
+        }
+    */
     boolarr
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_convert_u8_to_boolarr() {
+        let ret = convert_u8_to_boolarr(0b1010_1010);
+        assert_eq!(ret, [true, false, true, false, true, false, true, false]);
+
+        let ret = convert_u8_to_boolarr(0b0000_0000);
+        assert_eq!(
+            ret,
+            [false, false, false, false, false, false, false, false]
+        );
+
+        let ret = convert_u8_to_boolarr(0b1111_1111);
+        assert_eq!(ret, [true, true, true, true, true, true, true, true]);
+
+        let ret = convert_u8_to_boolarr(0b1000_0001);
+        assert_eq!(ret, [true, false, false, false, false, false, false, true]);
+    }
 }

@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 structopt = "0.3.25"
 rand = "0.8.0"
+sdl2 = {version="0.35.2", features=["bundled"]}
