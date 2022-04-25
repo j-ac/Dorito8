@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+extern crate sdl2;
+use sdl2::event::Event;
+use sdl2::keyboard::Scancode;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -28,6 +31,8 @@ const FONT: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
+const DOWN_PRESS: bool = true;
+const UP_PRESS: bool = false;
 
 #[derive(StructOpt, Debug)]
 
@@ -48,7 +53,7 @@ struct Opt {
     frequency: u32,
 }
 
-fn main() {
+pub fn main() {
     let mut opt = Opt::from_args();
     if opt.verbose {
         println!("input params: {:?}", opt);
@@ -66,16 +71,75 @@ fn main() {
 }
 
 fn run_game(mut sys: crate::hardware::System) {
-    loop {
-        sys.sync(); //Waits 1/frequency seconds and handles timers
-        let opcode: u16 = fetch(&mut sys.pc, &sys.mem);
-        let pc_increment = execute(opcode, &mut sys);
+    // ===SDL2 boilerplate===
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+
+    let _window = video_subsystem
+        .window("keyboard", 800, 600)
+        .position_centered()
+        .build()
+        .map_err(|e| e.to_string())
+        .unwrap();
+
+    let mut events = sdl_context.event_pump().unwrap();
+    // ===SDL2 boilerplate===
+
+    'gameloop: loop {
+        // ===KEYBOARD INPUT WITH SDL2===
+        for event in events.poll_iter() {
+            match event {
+                Event::Quit { .. } => break 'gameloop,
+                Event::KeyDown {
+                    scancode: Some(scancode),
+                    ..
+                } => key_press(&scancode, &mut sys.keyboard, DOWN_PRESS), //Call keypress telling it the key was pressed
+                Event::KeyUp {
+                    scancode: Some(scancode),
+                    ..
+                } => key_press(&scancode, &mut sys.keyboard, UP_PRESS), //Call keypress telling it the key was released
+
+                _ => (),
+            }
+        }
+        // ===END OF SDL2 SECTION===
+
+        let opcode: u16 = fetch(&mut sys.pc, &sys.mem); //Fetch one instruction
+        let pc_increment = execute(opcode, &mut sys); //Execute instruction and record how it affects the program counter
 
         sys.pc.val += match pc_increment {
             ProgramCounterPolicy::NoIncrement => 0,
             ProgramCounterPolicy::StandardIncrement => 2,
             ProgramCounterPolicy::DoubleIncrement => 4,
         };
+
+        sys.sync(); //Waits 1/frequency seconds and handles timers
+    }
+}
+
+fn key_press(keypress: &sdl2::keyboard::Scancode, keys: &mut hardware::Keys, is_key_down: bool) {
+    match keypress {
+        Scancode::Num1 => keys.key[0] = is_key_down,
+        Scancode::Num2 => keys.key[1] = is_key_down,
+        Scancode::Num3 => keys.key[2] = is_key_down,
+        Scancode::Num4 => keys.key[3] = is_key_down,
+
+        Scancode::Q => keys.key[4] = is_key_down,
+        Scancode::W => keys.key[5] = is_key_down,
+        Scancode::E => keys.key[6] = is_key_down,
+        Scancode::R => keys.key[7] = is_key_down,
+
+        Scancode::A => keys.key[8] = is_key_down,
+        Scancode::S => keys.key[9] = is_key_down,
+        Scancode::D => keys.key[10] = is_key_down,
+        Scancode::F => keys.key[11] = is_key_down,
+
+        Scancode::Z => keys.key[12] = is_key_down,
+        Scancode::X => keys.key[13] = is_key_down,
+        Scancode::C => keys.key[14] = is_key_down,
+        Scancode::V => keys.key[15] = is_key_down,
+
+        _ => (),
     }
 }
 
@@ -549,7 +613,7 @@ mod hardware {
                 rng: rand::rngs::StdRng::from_entropy(),
                 sync_data: SyncData {
                     num_cycles_until_timers_decrement: 0,
-                    frequency: frequency,
+                    frequency,
                     frequency_inverse: frequency as f64 / 60.0,
                 },
             }
@@ -570,8 +634,7 @@ mod hardware {
                 self.sync_data.num_cycles_until_timers_decrement =
                     (self.sync_data.frequency / 60) as u16
             } else {
-                self.sync_data.num_cycles_until_timers_decrement =
-                    self.sync_data.num_cycles_until_timers_decrement - 1;
+                self.sync_data.num_cycles_until_timers_decrement -= 1;
             }
         }
     }
