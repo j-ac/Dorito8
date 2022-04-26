@@ -117,6 +117,7 @@ fn run_game(mut sys: crate::hardware::System) {
     }
 }
 
+//Update the system's keyboard array with for a *single key* so it is 'true' if its pressed and 'false' otherwise
 fn key_press(keypress: &sdl2::keyboard::Scancode, keys: &mut hardware::Keys, is_key_down: bool) {
     match keypress {
         Scancode::Num1 => keys.key[0] = is_key_down,
@@ -643,6 +644,7 @@ mod hardware {
 mod opcode {
     use crate::convert_u8_to_boolarr;
     use crate::ProgramCounterPolicy;
+    use crate::DOWN_PRESS;
     use crate::EIGHT_BITS; //0xFF
     use crate::FOUR_BITS; //0xF
     use crate::MEM_SIZE;
@@ -996,13 +998,20 @@ mod opcode {
         ProgramCounterPolicy::StandardIncrement
     }
 
-    //stop execution until a key is pressed and record the key that was pressed.
+    //suspend execution until a key is pressed and record the key that was pressed.
     //opcode: FX0A
 
-    pub fn suspend_program_and_store_next_keypress() -> ProgramCounterPolicy {
-        //TODO
-
-        ProgramCounterPolicy::StandardIncrement
+    pub fn suspend_program_and_store_next_keypress(
+        keys: crate::hardware::Keys,
+        reg: &mut crate::hardware::Register,
+    ) -> ProgramCounterPolicy {
+        for i in 0..keys.key.len() {
+            if keys.key[i] == DOWN_PRESS {
+                reg.val = i as u8; //Record the key
+                return ProgramCounterPolicy::StandardIncrement; //
+            }
+        }
+        ProgramCounterPolicy::NoIncrement //Nothing was pressed, try again
     }
 
     //Set the value of the delay timer
@@ -1051,7 +1060,7 @@ mod opcode {
     ) -> ProgramCounterPolicy {
         assert!(i_reg.val + 2 <= MEM_SIZE as u16);
 
-        let hundreds_place = reg.val / 100; //Rust rounds down the remainder
+        let hundreds_place = reg.val / 100; //Rust rounds down the renmainder
         let tens_place = (reg.val % 100) / 10;
         let ones_place = reg.val % 10;
 
