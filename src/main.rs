@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 extern crate sdl2;
+use sdl2::audio::{AudioCallback, AudioSpecDesired};
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
 use std::path::PathBuf;
@@ -34,6 +35,28 @@ const FONT: [u8; 80] = [
 const DOWN_PRESS: bool = true;
 const UP_PRESS: bool = false;
 
+struct SquareWave {
+    phase_inc: f32,
+    phase: f32,
+    volume: f32,
+}
+
+impl AudioCallback for SquareWave {
+    type Channel = f32;
+
+    fn callback(&mut self, out: &mut [f32]) {
+        //generate a square wave
+        for x in out.iter_mut() {
+            *x = if self.phase <= 0.5 {
+                self.volume
+            } else {
+                -self.volume
+            };
+            self.phase = (self.phase + self.phase_inc) % 1.0;
+        }
+    }
+}
+
 #[derive(StructOpt, Debug)]
 
 struct Opt {
@@ -51,6 +74,9 @@ struct Opt {
     /// The frequency instructions are executed at. Will be rounded to nearest 60Hz
     #[structopt(short, long)]
     frequency: u32,
+    //TODO: replace the hardcoded 440.0 Hz with a command line parameter
+    //#[structopt(short, long)]
+    //audio_frequecy: f32,
 }
 
 pub fn main() {
@@ -71,7 +97,7 @@ pub fn main() {
 }
 
 fn run_game(mut sys: crate::hardware::System) {
-    // ===SDL2 boilerplate===
+    // ===Creating SDL2 boilerplate objects===
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -83,7 +109,23 @@ fn run_game(mut sys: crate::hardware::System) {
         .unwrap();
 
     let mut events = sdl_context.event_pump().unwrap();
-    // ===SDL2 boilerplate===
+
+    // ===SDL2 audio===
+    let audio_subsystem = sdl_context.audio().unwrap();
+    let wave_spec = AudioSpecDesired {
+        freq: Some(44_100),
+        channels: Some(1),
+        samples: None,
+    };
+
+    let device = audio_subsystem
+        .open_playback(None, &wave_spec, |spec| SquareWave {
+            phase_inc: 440.0 / spec.freq as f32,
+            phase: 0.0,
+            volume: -0.25,
+        })
+        .unwrap();
+    //============================
 
     'gameloop: loop {
         // ===KEYBOARD INPUT WITH SDL2===
@@ -102,8 +144,18 @@ fn run_game(mut sys: crate::hardware::System) {
                 _ => (),
             }
         }
-        // ===END OF SDL2 SECTION===
 
+        // ===AUDIO OUT WITH SDL2===
+        // Toggle the emission of the square wave according to the hardware timers
+        if sys.sound.time > 0 && device.status() == sdl2::audio::AudioStatus::Paused {
+            device.resume();
+        } else if sys.sound.time > 0 {
+            assert!(device.status() == sdl2::audio::AudioStatus::Playing);
+        } else {
+            device.pause();
+        }
+
+        //GAMEPLAY LOOP
         let opcode: u16 = fetch(&mut sys.pc, &sys.mem); //Fetch one instruction
         let pc_increment = execute(opcode, &mut sys); //Execute instruction and record how it affects the program counter
 
