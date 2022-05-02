@@ -9,11 +9,12 @@ use structopt::StructOpt;
 const TWELVE_BITS: u16 = 0xFFF;
 const EIGHT_BITS: u16 = 0xFF;
 const FOUR_BITS: u16 = 0xF;
-const MEM_SIZE: usize = 4096;
-const SCREEN_WIDTH: u8 = 64;
-const SCREEN_HEIGHT: u8 = 32;
+const MEM_SIZE: usize = 4096; //in bytes
+const SCREEN_WIDTH: u8 = 64; //in pixels, on a chip-8 display
+const SCREEN_HEIGHT: u8 = 32; // ^^
+const PIXEL_SIZE: u32 = 20; //length in pixels of a square to use on the host to represent one CHIP-8 pixel. Window will be scaled proportionally
 const NUM_REGISTERS: usize = 16;
-const PROGRAM_START_POINT: usize = 512;
+const PROGRAM_START_POINT: usize = 512; //In bytes
 const FONT: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -35,12 +36,14 @@ const FONT: [u8; 80] = [
 const DOWN_PRESS: bool = true;
 const UP_PRESS: bool = false;
 
+//For use with SDL2
 struct SquareWave {
     phase_inc: f32,
     phase: f32,
     volume: f32,
 }
 
+//For use with SDL2
 impl AudioCallback for SquareWave {
     type Channel = f32;
 
@@ -85,7 +88,7 @@ pub fn main() {
         println!("input params: {:?}", opt);
     }
 
-    opt.frequency = (((opt.frequency as f64 / 60.0).round()) as u32 * 60).max(60); //round to nearest multiple of 60 to aminimum of 60
+    opt.frequency = (((opt.frequency as f64 / 60.0).round()) as u32 * 60).max(60); //round to nearest multiple of 60 to a minimum of 60
 
     if opt.verbose {
         println!("Frequency rounded to: {:?}", opt.frequency)
@@ -102,7 +105,11 @@ fn run_game(mut sys: crate::hardware::System) {
     let video_subsystem = sdl_context.video().unwrap();
 
     let _window = video_subsystem
-        .window("keyboard", 800, 600)
+        .window(
+            "keyboard",
+            PIXEL_SIZE * SCREEN_WIDTH as u32,
+            PIXEL_SIZE * SCREEN_HEIGHT as u32,
+        )
         .position_centered()
         .build()
         .map_err(|e| e.to_string())
@@ -125,6 +132,7 @@ fn run_game(mut sys: crate::hardware::System) {
             volume: -0.25,
         })
         .unwrap();
+
     //============================
 
     'gameloop: loop {
