@@ -3,6 +3,7 @@ extern crate sdl2;
 use sdl2::audio::{AudioCallback, AudioSpecDesired};
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
+use sdl2::pixels::Color;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -104,7 +105,7 @@ fn run_game(mut sys: crate::hardware::System) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
-    let _window = video_subsystem
+    let window = video_subsystem
         .window(
             "keyboard",
             PIXEL_SIZE * SCREEN_WIDTH as u32,
@@ -116,6 +117,15 @@ fn run_game(mut sys: crate::hardware::System) {
         .unwrap();
 
     let mut events = sdl_context.event_pump().unwrap();
+
+    //===SDL2 graphics===
+    let mut canvas = window
+        .into_canvas()
+        .build()
+        .map_err(|e| e.to_string())
+        .unwrap();
+
+    canvas.set_draw_color(Color::RGB(255, 0, 0));
 
     // ===SDL2 audio===
     let audio_subsystem = sdl_context.audio().unwrap();
@@ -161,6 +171,25 @@ fn run_game(mut sys: crate::hardware::System) {
             assert!(device.status() == sdl2::audio::AudioStatus::Playing);
         } else {
             device.pause();
+        }
+
+        // ===GRAPHICS WITH SDL2===
+        if sys.disp.is_updated {
+            canvas.clear();
+
+            //Redraw every pixel
+            for x in 0..SCREEN_WIDTH {
+                for y in 0..SCREEN_HEIGHT {
+                    let rect: sdl2::rect::Rect = sdl2::rect::Rect::new(
+                        (x * PIXEL_SIZE as u8) as i32,
+                        (y * PIXEL_SIZE as u8) as i32,
+                        PIXEL_SIZE,
+                        PIXEL_SIZE,
+                    );
+                    canvas.draw_rect(rect).unwrap();
+                    canvas.fill_rect(rect).unwrap();
+                }
+            }
         }
 
         //GAMEPLAY LOOP
@@ -599,6 +628,7 @@ mod hardware {
 
     pub struct Display {
         pub data: [[bool; 64]; 32],
+        pub is_updated: bool,
     }
 
     pub struct DelayTimer {
@@ -667,6 +697,7 @@ mod hardware {
                 keyboard: Keys { key: [false; 16] },
                 disp: Display {
                     data: [[false; 64]; 32],
+                    is_updated: false,
                 },
 
                 sound: SoundTimer { time: 0 },
@@ -1019,6 +1050,9 @@ mod opcode {
                 dis.data[x_coordinate][y_coordinate] ^= byte_as_bool_array[x as usize];
                 //insert the sprite by XORing
             }
+        }
+        if nibble != 0 {
+            dis.is_updated = true; //Check sprite size in case function is called with an empty sprite
         }
         ProgramCounterPolicy::StandardIncrement
     }
