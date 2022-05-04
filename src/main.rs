@@ -112,6 +112,7 @@ fn run_game(mut sys: crate::hardware::System) {
             PIXEL_SIZE * SCREEN_HEIGHT as u32,
         )
         .position_centered()
+        .opengl()
         .build()
         .map_err(|e| e.to_string())
         .unwrap();
@@ -525,9 +526,9 @@ fn execute(opcode: u16, sys: &mut crate::hardware::System) -> ProgramCounterPoli
 // Express a 16 bit integer as a tuple of its 4 bit chunks.
 fn opcode_in_u16_to_nibbles(opcode: u16) -> (u8, u8, u8, u8) {
     let first_nibble = (opcode >> 12) as u8;
-    let second_nibble = ((opcode >> 8) % 0xF) as u8;
-    let third_nibble = ((opcode >> 4) % 0xFF) as u8;
-    let fourth_nibble = ((opcode) % 0xFFF) as u8;
+    let second_nibble = ((opcode >> 8) & FOUR_BITS) as u8;
+    let third_nibble = ((opcode >> 4) & FOUR_BITS) as u8;
+    let fourth_nibble = ((opcode) & FOUR_BITS) as u8;
 
     //no nibble datatype in rust. Using asserts to ensure they are only used as nibbles.
     assert!(first_nibble <= FOUR_BITS as u8);
@@ -541,18 +542,19 @@ fn opcode_in_u16_to_nibbles(opcode: u16) -> (u8, u8, u8, u8) {
 //combine an array of nibbles into a single u16
 fn nibbles_array_to_u16(nibbles: &[u8]) -> u16 {
     assert!(nibbles.len() <= 4); // More than 4 won't fit in a u16.
+
     let mut returner: u16 = 0;
 
-    //Note for loops in rust are exclusive on the second value.
-    for nibble in nibbles.iter() {
-        //-1 so the last element is done outside of the for loop. Last shouldn't be shifted!
+    for (i, nibble) in nibbles.iter().enumerate() {
         assert!(nibble <= &(FOUR_BITS as u8)); //ie is a nibble
 
         returner += *nibble as u16;
-        returner <<= 4;
-    }
 
-    returner += nibbles[(nibbles.len() - 1) as usize] as u16; //the one ignored by for loop.
+        if i < nibbles.len() - 1 {
+            //If it is not the last iteration
+            returner <<= 4;
+        }
+    }
 
     returner
 }
@@ -1242,5 +1244,31 @@ mod tests {
 
         let ret = convert_u8_to_boolarr(0b1000_0001);
         assert_eq!(ret, [true, false, false, false, false, false, false, true]);
+    }
+    #[test]
+    fn test_nibbles_array_to_u16() {
+        let ret = nibbles_array_to_u16(&[0x1, 0x3, 0x3, 0x7]);
+        assert_eq!(ret, 0x1337);
+
+        let ret = nibbles_array_to_u16(&[0x1]);
+        assert_eq!(ret, 0x1);
+
+        let ret = nibbles_array_to_u16(&[0x0, 0x0]);
+        assert_eq!(ret, 0x0);
+
+        let ret = nibbles_array_to_u16(&[0xF, 0xF, 0xF, 0xF]);
+        assert_eq!(ret, 0xFFFF);
+    }
+
+    #[test]
+    fn test_opcode_in_u16_to_nibbles() {
+        let ret = opcode_in_u16_to_nibbles(0xFFFF);
+        assert_eq!(ret, (0xF, 0xF, 0xF, 0xF));
+
+        let ret = opcode_in_u16_to_nibbles(0x1234);
+        assert_eq!(ret, (0x1, 0x2, 0x3, 0x4));
+
+        let ret = opcode_in_u16_to_nibbles(0x0000);
+        assert_eq!(ret, (0x0, 0x0, 0x0, 0x0));
     }
 }
