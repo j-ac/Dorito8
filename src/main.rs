@@ -691,7 +691,9 @@ mod hardware {
                 registers: [Register { val: 0 }; NUM_REGISTERS],
                 mem,
                 ireg: IRegister { val: 0 },
-                pc: ProgramCounter { val: 0 },
+                pc: ProgramCounter {
+                    val: PROGRAM_START_POINT as u16,
+                },
                 sp: Stack {
                     sp: 0,
                     stack: [0; 16],
