@@ -76,7 +76,7 @@ struct Opt {
     verbose: bool,
 
     /// The frequency instructions are executed at. Will be rounded to nearest 60Hz
-    #[structopt(short, long)]
+    #[structopt(short, long, default_value = "3600")]
     frequency: u32,
     //TODO: replace the hardcoded 440.0 Hz with a command line parameter
     //#[structopt(short, long)]
@@ -112,37 +112,43 @@ fn run_game(mut sys: crate::hardware::System) {
             PIXEL_SIZE * SCREEN_HEIGHT as u32,
         )
         .position_centered()
-        .opengl()
         .build()
-        .map_err(|e| e.to_string())
         .unwrap();
-
-    let mut events = sdl_context.event_pump().unwrap();
 
     //===SDL2 graphics===
     let mut canvas = window
         .into_canvas()
+        .present_vsync()
+        .accelerated()
         .build()
-        .map_err(|e| e.to_string())
         .unwrap();
 
     canvas.set_draw_color(Color::RGB(255, 0, 0));
+    canvas.clear();
+    canvas.present();
+
+    let texture_creator = canvas.texture_creator();
+    let mut texture = texture_creator
+        .create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, 64, 32)
+        .unwrap();
+
+    let mut events = sdl_context.event_pump().unwrap();
 
     // ===SDL2 audio===
-    let audio_subsystem = sdl_context.audio().unwrap();
-    let wave_spec = AudioSpecDesired {
-        freq: Some(44_100),
-        channels: Some(1),
-        samples: None,
-    };
+    //let audio_subsystem = sdl_context.audio().unwrap();
+    //let wave_spec = AudioSpecDesired {
+    //    freq: Some(44_100),
+    //    channels: Some(1),
+    //    samples: None,
+    //};
 
-    let device = audio_subsystem
-        .open_playback(None, &wave_spec, |spec| SquareWave {
-            phase_inc: 440.0 / spec.freq as f32,
-            phase: 0.0,
-            volume: -0.25,
-        })
-        .unwrap();
+    //let device = audio_subsystem
+    //    .open_playback(None, &wave_spec, |spec| SquareWave {
+    //        phase_inc: 440.0 / spec.freq as f32,
+    //        phase: 0.0,
+    //        volume: -0.25,
+    //    })
+    //    .unwrap();
 
     //============================
 
@@ -166,13 +172,13 @@ fn run_game(mut sys: crate::hardware::System) {
 
         // ===AUDIO OUT WITH SDL2===
         // Toggle the emission of the square wave according to the hardware timers
-        if sys.sound.time > 0 && device.status() == sdl2::audio::AudioStatus::Paused {
-            device.resume();
-        } else if sys.sound.time > 0 {
-            assert!(device.status() == sdl2::audio::AudioStatus::Playing);
-        } else {
-            device.pause();
-        }
+        //if sys.sound.time > 0 && device.status() == sdl2::audio::AudioStatus::Paused {
+        //    device.resume();
+        //} else if sys.sound.time > 0 {
+        //    assert!(device.status() == sdl2::audio::AudioStatus::Playing);
+        //} else {
+        //    device.pause();
+        //}
 
         // ===GRAPHICS WITH SDL2===
         if sys.disp.is_updated {
@@ -182,8 +188,8 @@ fn run_game(mut sys: crate::hardware::System) {
             for x in 0..SCREEN_WIDTH {
                 for y in 0..SCREEN_HEIGHT {
                     let rect: sdl2::rect::Rect = sdl2::rect::Rect::new(
-                        (x * PIXEL_SIZE as u8) as i32,
-                        (y * PIXEL_SIZE as u8) as i32,
+                        (x as u32 * PIXEL_SIZE) as i32,
+                        (y as u32 * PIXEL_SIZE) as i32,
                         PIXEL_SIZE,
                         PIXEL_SIZE,
                     );
@@ -568,10 +574,7 @@ pub enum ProgramCounterPolicy {
 
 mod hardware {
 
-    use crate::FONT;
-    use crate::MEM_SIZE;
-    use crate::NUM_REGISTERS;
-    use crate::PROGRAM_START_POINT;
+    use crate::{FONT, MEM_SIZE, NUM_REGISTERS, PROGRAM_START_POINT, SCREEN_HEIGHT, SCREEN_WIDTH};
     use rand::prelude::*;
     use std::fs::File;
     use std::io::prelude::*;
@@ -629,7 +632,7 @@ mod hardware {
     }
 
     pub struct Display {
-        pub data: [[bool; 64]; 32],
+        pub data: [[bool; SCREEN_HEIGHT as usize]; SCREEN_WIDTH as usize],
         pub is_updated: bool,
     }
 
@@ -700,7 +703,7 @@ mod hardware {
                 },
                 keyboard: Keys { key: [false; 16] },
                 disp: Display {
-                    data: [[false; 64]; 32],
+                    data: [[false; SCREEN_HEIGHT as usize]; SCREEN_WIDTH as usize],
                     is_updated: false,
                 },
 
@@ -760,7 +763,7 @@ mod opcode {
     // Clear the display
     // OPCODE: 00E0
     pub fn cls(dis: &mut crate::hardware::Display) -> ProgramCounterPolicy {
-        dis.data = [[false; 64]; 32];
+        dis.data = [[false; SCREEN_HEIGHT as usize]; SCREEN_WIDTH as usize];
 
         ProgramCounterPolicy::StandardIncrement
     }
