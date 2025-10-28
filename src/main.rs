@@ -123,7 +123,7 @@ fn run_game(mut sys: crate::hardware::System) {
         .build()
         .unwrap();
 
-    canvas.set_draw_color(Color::RGB(255, 0, 0));
+    canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
     canvas.present();
 
@@ -581,6 +581,7 @@ pub enum ProgramCounterPolicy {
 mod hardware {
 
     use crate::{FONT, MEM_SIZE, NUM_REGISTERS, PROGRAM_START_POINT, SCREEN_HEIGHT, SCREEN_WIDTH};
+    use core::fmt;
     use rand::prelude::*;
     use std::fs::File;
     use std::io::prelude::*;
@@ -588,9 +589,15 @@ mod hardware {
     use std::path::PathBuf;
     use std::time::*;
 
-    #[derive(Default, Copy, Clone)]
+    #[derive(Default, Copy, Clone, Debug)]
     pub struct Register {
         pub val: u8,
+    }
+
+    impl fmt::Display for Register {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:02X}", self.val)
+        }
     }
 
     pub struct IRegister {
@@ -780,6 +787,7 @@ mod opcode {
         stack: &mut crate::hardware::Stack,
         program_counter: &mut crate::hardware::ProgramCounter,
     ) -> ProgramCounterPolicy {
+        println!("RET");
         program_counter.set(stack.pop());
 
         ProgramCounterPolicy::StandardIncrement //So that it does not call the subroutine infinitely
@@ -792,6 +800,7 @@ mod opcode {
         program_counter: &mut crate::hardware::ProgramCounter,
     ) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS); // value not exceeding 0xFFF
+        println!("JP {input}");
         program_counter.set(input);
 
         ProgramCounterPolicy::NoIncrement
@@ -805,6 +814,7 @@ mod opcode {
         stack: &mut crate::hardware::Stack,
     ) -> ProgramCounterPolicy {
         assert!(input <= TWELVE_BITS);
+        println!("CALL {input}");
 
         stack.push(program_counter.val);
         program_counter.set(input);
@@ -815,6 +825,7 @@ mod opcode {
     // Skip if equal
     // OPCODE: 3XKK
     pub fn se_const_vs_reg(input: u8, register: crate::hardware::Register) -> ProgramCounterPolicy {
+        println!("SE val: {input} reg: {register}");
         if input == register.val {
             ProgramCounterPolicy::DoubleIncrement
         } else {
@@ -827,6 +838,7 @@ mod opcode {
         input: u8,
         register: crate::hardware::Register,
     ) -> ProgramCounterPolicy {
+        println!("SNE val: {input} reg: {register}");
         if input != register.val {
             ProgramCounterPolicy::DoubleIncrement
         } else {
@@ -840,6 +852,7 @@ mod opcode {
         reg1: crate::hardware::Register,
         reg2: crate::hardware::Register,
     ) -> ProgramCounterPolicy {
+        println!("SE reg1: {reg1} reg2: {reg2}");
         if reg1.val == reg2.val {
             ProgramCounterPolicy::DoubleIncrement
         } else {
@@ -853,6 +866,7 @@ mod opcode {
         reg1: crate::hardware::Register,
         reg2: crate::hardware::Register,
     ) -> ProgramCounterPolicy {
+        println!("SNE reg1: {reg1} reg2: {reg2}");
         if reg1.val != reg2.val {
             ProgramCounterPolicy::DoubleIncrement
         } else {
@@ -863,6 +877,7 @@ mod opcode {
     // Load? seems like a bad naming convention...
     // OPCODE: 6XKK
     pub fn ld(register: &mut crate::hardware::Register, input: u8) -> ProgramCounterPolicy {
+        println!("LD register: {register} input: {input}");
         register.val = input;
 
         ProgramCounterPolicy::StandardIncrement
@@ -871,6 +886,7 @@ mod opcode {
     // add constant to register
     // OPCODE: 7XKK
     pub fn add(input: u8, reg: &mut crate::hardware::Register) -> ProgramCounterPolicy {
+        println!("ADD register: {reg} input: {input}");
         reg.val = reg.val.wrapping_add(input); //Documentation does not state an overflow policy. Will assume wrapping
 
         ProgramCounterPolicy::StandardIncrement
@@ -882,6 +898,7 @@ mod opcode {
         reg2: crate::hardware::Register,
         reg1: &mut crate::hardware::Register,
     ) -> ProgramCounterPolicy {
+        println!("LD REG->REG reg1: {reg1} reg2: {reg2}");
         reg1.val = reg2.val;
 
         ProgramCounterPolicy::StandardIncrement
