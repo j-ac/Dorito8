@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 extern crate sdl2;
-use sdl2::audio::{AudioCallback, AudioSpecDesired};
+use sdl2::audio::AudioCallback;
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
 use sdl2::pixels::Color;
