@@ -182,11 +182,16 @@ fn run_game(mut sys: crate::hardware::System) {
 
         // ===GRAPHICS WITH SDL2===
         if sys.disp.is_updated {
+            sys.disp.is_updated = false;
             canvas.clear();
 
             //Redraw every pixel
             for x in 0..SCREEN_WIDTH {
                 for y in 0..SCREEN_HEIGHT {
+                    match sys.disp.data[x as usize][y as usize] {
+                        true => canvas.set_draw_color(Color::RGB(255, 0, 0)),
+                        false => canvas.set_draw_color(Color::RGB(0, 0, 0)),
+                    }
                     let rect: sdl2::rect::Rect = sdl2::rect::Rect::new(
                         (x as u32 * PIXEL_SIZE) as i32,
                         (y as u32 * PIXEL_SIZE) as i32,
@@ -198,6 +203,7 @@ fn run_game(mut sys: crate::hardware::System) {
                 }
             }
         }
+        canvas.present();
 
         //GAMEPLAY LOOP
         let opcode: u16 = fetch(&mut sys.pc, &sys.mem); //Fetch one instruction
